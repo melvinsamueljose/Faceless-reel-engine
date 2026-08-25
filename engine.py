@@ -1,64 +1,32 @@
 import os
-import asyncio
 import requests
-from playwright.async_api import async_playwright
-import google.generativeai as genai
-import edge_tts
-
-TOOL_URL = os.getenv("TOOL_URL", "https://aicarousels.com")
-GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY")
-
-async def record_screen():
-    print(f"[1/4] Recording screen for {TOOL_URL}...")
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={'width': 1080, 'height': 1920},
-            record_video_dir="output/",
-            record_video_size={'width': 1080, 'height': 1920}
-        )
-        page = await context.new_page()
-        await page.goto(TOOL_URL, wait_until="networkidle")
-        await page.wait_for_timeout(4000)
-
-        await page.mouse.wheel(0, 800)
-        await page.wait_for_timeout(3000)
-        await page.mouse.wheel(0, -400)
-        await page.wait_for_timeout(3000)
-
-        await context.close()
-        await browser.close()
 
 def generate_script():
-    print("[2/4] Generating script via Claude 3.5 Sonnet...")
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY secret is not set in GitHub Secrets.")
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    prompt = f"Write a 15-second viral Instagram Reel hook script targeting small content creators about this tool: {TOOL_URL}. Keep it under 35 words. Pure voiceover text only."
+    
+    prompt = (
+        "Write a punchy, viral 15-second script for an Instagram Reel promoting an AI tool. "
+        "Return ONLY the plain spoken voiceover script text with no stage directions or formatting."
+    )
 
     payload = {
         "model": "anthropic/claude-3.5-sonnet",
         "messages": [{"role": "user", "content": prompt}]
     }
 
-    res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
-    script_text = res.json()['choices'][0]['message']['content'].strip()
-    print(f"Script: {script_text}")
-    return script_text
+    res = requests.post(url, headers=headers, json=payload)
+    data = res.json()
 
-async def generate_voiceover(text):
-    print("[3/4] Generating voiceover via Edge-TTS...")
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
-    await communicate.save("output/voice.mp3")
+    if "choices" not in data:
+        print(f"OpenRouter API Response Error: {data}")
+        raise KeyError(f"OpenRouter call failed. Response payload was: {data}")
 
-async def main():
-    os.makedirs("output", exist_ok=True)
-    await record_screen()
-    script = generate_script()
-    await generate_voiceover(script)
-    print("[4/4] Asset generation complete.")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    return data["choices"][0]["message"]["content"].strip()
