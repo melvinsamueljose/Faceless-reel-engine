@@ -21,7 +21,7 @@ def generate_script():
     )
 
     payload = {
-        "model": "anthropic/claude-3.5-sonnet",
+        "model": "anthropic/claude-sonnet-5",
         "messages": [{"role": "user", "content": prompt}]
     }
 
