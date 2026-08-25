@@ -1,7 +1,7 @@
 import os
 import asyncio
 import requests
-from gtts import gTTS
+import edge_tts
 from playwright.async_api import async_playwright
 
 def generate_script():
@@ -22,7 +22,6 @@ def generate_script():
 
     models_to_try = [
         "openrouter/auto",
-        "anthropic/claude-sonnet-5",
         "anthropic/claude-3.5-sonnet"
     ]
 
@@ -46,13 +45,28 @@ def generate_script():
         except Exception as e:
             print(f"Request failed for model {model_slug}: {e}")
 
-    raise KeyError("All OpenRouter model endpoints failed. Check API key, credits, or connectivity.")
+    raise KeyError("All OpenRouter model endpoints failed.")
 
-def generate_voiceover(text, output_path):
-    print("Rendering audio using Google Text-to-Speech (gTTS)...")
-    tts = gTTS(text=text, lang='en', slow=False)
-    tts.save(output_path)
-    print("Voiceover audio saved successfully!")
+async def generate_voiceover(text, output_path):
+    # Try different neural voices in case one gets blocked by Edge endpoint
+    voices = [
+        "en-US-ChristopherNeural",
+        "en-US-GuyNeural",
+        "en-US-AriaNeural",
+        "en-US-JennyNeural"
+    ]
+
+    for voice in voices:
+        try:
+            print(f"Attempting edge-tts generation with voice: {voice}...")
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(output_path)
+            print(f"Successfully rendered voiceover using {voice}!")
+            return
+        except Exception as e:
+            print(f"Voice {voice} failed: {e}")
+
+    raise RuntimeError("All edge-tts voice endpoints failed.")
 
 async def record_screen(target_url, output_dir):
     async with async_playwright() as p:
@@ -81,8 +95,8 @@ async def main():
     script_text = generate_script()
     print(f"Generated Script:\n\"{script_text}\"")
 
-    print("[3/3] Rendering voiceover audio...")
-    generate_voiceover(script_text, "output/voice.mp3")
+    print("[3/3] Rendering voiceover audio via edge-tts...")
+    await generate_voiceover(script_text, "output/voice.mp3")
 
     print("Pipeline completed cleanly! All assets stored in output/")
 
