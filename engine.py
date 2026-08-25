@@ -20,7 +20,7 @@ def generate_script():
         "Return ONLY the plain spoken voiceover script text with no stage directions, quotes, or formatting."
     )
 
-    # List models in order of priority: Sonnet 5 -> Claude 3.5 Sonnet -> OpenRouter Auto
+    # Models to attempt in priority order
     models_to_try = [
         "anthropic/claude-sonnet-5",
         "anthropic/claude-3.5-sonnet",
@@ -43,15 +43,28 @@ def generate_script():
                 print(f"Successfully generated script using {model_slug}!")
                 return script_text
             else:
-                print(f"Model {model_slug} returned non-standard payload: {data}")
+                print(f"Model {model_slug} returned non-standard response: {data}")
         except Exception as e:
             print(f"Request failed for model {model_slug}: {e}")
 
-    raise KeyError("All OpenRouter model endpoints failed. Please check your API key, credits, or connectivity.")
+    raise KeyError("All OpenRouter model endpoints failed. Check API key, credits, or connectivity.")
 
 async def generate_voiceover(text, output_path):
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
-    await communicate.save(output_path)
+    # Multiple neural voices to cycle through if Microsoft Edge TTS throttles a connection
+    voices = ["en-US-ChristopherNeural", "en-US-GuyNeural", "en-US-AriaNeural"]
+    
+    for voice in voices:
+        print(f"Trying voice endpoint: {voice}...")
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(output_path)
+            print(f"Voiceover successfully rendered with {voice}!")
+            return
+        except Exception as e:
+            print(f"Voice {voice} failed: {e}. Retrying with alternate voice...")
+            await asyncio.sleep(2)
+            
+    raise RuntimeError("All edge-tts voice endpoints failed.")
 
 async def record_screen(target_url, output_dir):
     async with async_playwright() as p:
@@ -64,12 +77,12 @@ async def record_screen(target_url, output_dir):
         page = await context.new_page()
         print(f"Navigating to {target_url}...")
         await page.goto(target_url, wait_until="networkidle")
-        await page.wait_for_timeout(10000)  # Record 10 seconds of interaction
+        await page.wait_for_timeout(10000)  # Record 10 seconds of site view
         await context.close()
         await browser.close()
 
 async def main():
-    # 1. Guarantee output folder exists at startup
+    # Guarantee output folder exists immediately
     os.makedirs("output", exist_ok=True)
 
     tool_url = os.getenv("TOOL_URL", "https://aicarousels.com")
@@ -77,7 +90,7 @@ async def main():
     print("[1/3] Recording target website screen...")
     await record_screen(tool_url, "output")
 
-    print("[2/3] Generating script via Anthropic Claude...")
+    print("[2/3] Generating script via AI...")
     script_text = generate_script()
     print(f"Generated Script:\n\"{script_text}\"")
 
