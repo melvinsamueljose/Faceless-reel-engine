@@ -1,32 +1,22 @@
 import os
-import requests
+import asyncio
 
-def generate_script():
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise ValueError("OPENROUTER_API_KEY secret is not set in GitHub Secrets.")
+async def main():
+    # 1. Force-create output directory immediately
+    os.makedirs("output", exist_ok=True)
 
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    prompt = (
-        "Write a punchy, viral 15-second script for an Instagram Reel promoting an AI tool. "
-        "Return ONLY the plain spoken voiceover script text with no stage directions or formatting."
-    )
+    print("[1/4] Recording screen...")
+    # Make sure your Playwright recording saves to "output/demo.webm" or "output/demo.mp4"
+    # await page.video.path() or custom video save path here
 
-    payload = {
-        "model": "anthropic/claude-3.5-sonnet",
-        "messages": [{"role": "user", "content": prompt}]
-    }
+    print("[2/4] Generating script...")
+    script = generate_script()
 
-    res = requests.post(url, headers=headers, json=payload)
-    data = res.json()
+    print("[3/4] Generating voiceover...")
+    # Save TTS voiceover directly into the output directory
+    # e.g., await generate_voiceover(script, "output/voice.mp3")
 
-    if "choices" not in data:
-        print(f"OpenRouter API Response Error: {data}")
-        raise KeyError(f"OpenRouter call failed. Response payload was: {data}")
+    print("[4/4] Asset generation complete.")
 
-    return data["choices"][0]["message"]["content"].strip()
+if __name__ == "__main__":
+    asyncio.run(main())
