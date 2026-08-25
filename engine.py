@@ -17,22 +17,37 @@ def generate_script():
     
     prompt = (
         "Write a punchy, viral 15-second script for an Instagram Reel promoting an AI tool. "
-        "Return ONLY the plain spoken voiceover script text with no stage directions or formatting."
+        "Return ONLY the plain spoken voiceover script text with no stage directions, quotes, or formatting."
     )
 
-    payload = {
-        "model": "anthropic/claude-sonnet-5",
-        "messages": [{"role": "user", "content": prompt}]
-    }
+    # List models in order of priority: Sonnet 5 -> Claude 3.5 Sonnet -> OpenRouter Auto
+    models_to_try = [
+        "anthropic/claude-sonnet-5",
+        "anthropic/claude-3.5-sonnet",
+        "openrouter/auto"
+    ]
 
-    res = requests.post(url, headers=headers, json=payload)
-    data = res.json()
+    for model_slug in models_to_try:
+        print(f"Attempting script generation with model: {model_slug}...")
+        payload = {
+            "model": model_slug,
+            "messages": [{"role": "user", "content": prompt}]
+        }
 
-    if "choices" not in data:
-        print(f"OpenRouter Error Payload: {data}")
-        raise KeyError(f"OpenRouter call failed. Check credits or key.")
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=30)
+            data = res.json()
 
-    return data["choices"][0]["message"]["content"].strip()
+            if "choices" in data and len(data["choices"]) > 0:
+                script_text = data["choices"][0]["message"]["content"].strip()
+                print(f"Successfully generated script using {model_slug}!")
+                return script_text
+            else:
+                print(f"Model {model_slug} returned non-standard payload: {data}")
+        except Exception as e:
+            print(f"Request failed for model {model_slug}: {e}")
+
+    raise KeyError("All OpenRouter model endpoints failed. Please check your API key, credits, or connectivity.")
 
 async def generate_voiceover(text, output_path):
     communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
@@ -49,26 +64,27 @@ async def record_screen(target_url, output_dir):
         page = await context.new_page()
         print(f"Navigating to {target_url}...")
         await page.goto(target_url, wait_until="networkidle")
-        await page.wait_for_timeout(10000)  # Record 10 seconds of interaction/scrolling
+        await page.wait_for_timeout(10000)  # Record 10 seconds of interaction
         await context.close()
         await browser.close()
 
 async def main():
-    # Force-create output directory immediately
+    # 1. Guarantee output folder exists at startup
     os.makedirs("output", exist_ok=True)
 
     tool_url = os.getenv("TOOL_URL", "https://aicarousels.com")
 
-    print("[1/3] Recording screen...")
+    print("[1/3] Recording target website screen...")
     await record_screen(tool_url, "output")
 
-    print("[2/3] Generating script via AI...")
+    print("[2/3] Generating script via Anthropic Claude...")
     script_text = generate_script()
+    print(f"Generated Script:\n\"{script_text}\"")
 
-    print("[3/3] Generating voiceover audio...")
+    print("[3/3] Rendering voiceover audio...")
     await generate_voiceover(script_text, "output/voice.mp3")
 
-    print("All assets generated successfully in output/")
+    print("Pipeline completed cleanly! All assets stored in output/")
 
 if __name__ == "__main__":
     asyncio.run(main())
