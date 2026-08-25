@@ -1,0 +1,39 @@
+name: Generate Faceless Reel
+
+on:
+  workflow_dispatch:
+    inputs:
+      tool_url:
+        description: 'Target AI Tool URL'
+        required: true
+        default: 'https://aicarousels.com'
+
+jobs:
+  build-and-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies & Playwright
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Execute Autonomous Pipeline
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TOOL_URL: ${{ github.event.inputs.tool_url }}
+        run: python engine.py
+
+      - name: Send Video to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python send_telegram.py
