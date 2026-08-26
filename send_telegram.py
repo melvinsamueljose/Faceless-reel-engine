@@ -12,11 +12,11 @@ def send_video_to_telegram():
         sys.exit(1)
 
     if not os.path.exists(video_path):
-        print(f"[TELEGRAM ERROR] File '{video_path}' not found.")
+        print(f"[TELEGRAM ERROR] Output file '{video_path}' not found.")
         sys.exit(1)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
-    print(f"[TELEGRAM] Dispatching video to chat {chat_id}...")
+    print(f"[TELEGRAM] Dispatching video output to chat {chat_id}...")
 
     with open(video_path, "rb") as video_file:
         payload = {
@@ -28,7 +28,7 @@ def send_video_to_telegram():
         response = requests.post(url, data=payload, files=files)
 
     if response.status_code == 200:
-        print("[TELEGRAM] Video sent successfully!")
+        print("[TELEGRAM] Video delivered successfully!")
     else:
         print(f"[TELEGRAM ERROR] Response {response.status_code}: {response.text}")
         sys.exit(1)
