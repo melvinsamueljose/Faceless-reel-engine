@@ -1,8 +1,14 @@
 import os
 import sys
 import asyncio
-import edge_tts
 from PIL import Image, ImageDraw, ImageFont
+
+# --- CRITICAL FIX FOR MOVIEPY + PILLOW 10+ COMPATIBILITY ---
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
+# ----------------------------------------------------------
+
+import edge_tts
 from playwright.async_api import async_playwright
 
 try:
@@ -31,8 +37,8 @@ async def generate_voiceover(text, output_audio_path="voiceover.mp3"):
 
 async def capture_stealth_screenshot(url, output_img_path="webpage_capture.png"):
     """
-    Launches Playwright with stealth flags and custom headers to bypass 
-    Cloudflare bot detection and capture full high-res viewport rendering.
+    Launches Playwright with stealth flags to bypass bot protections 
+    and capture full vertical viewport rendering.
     """
     print(f"[STEALTH SCRAPER] Bypassing protections for {url}...")
     async with async_playwright() as p:
@@ -60,7 +66,7 @@ async def capture_stealth_screenshot(url, output_img_path="webpage_capture.png")
         try:
             await page.goto(url, wait_until="networkidle", timeout=60000)
             print("[STEALTH SCRAPER] Page fully loaded.")
-            await asyncio.sleep(4)  # Wait for JS animation/hydration
+            await asyncio.sleep(4)  # Wait for dynamic JS content
             await page.screenshot(path=output_img_path, full_page=False)
             print(f"[STEALTH SCRAPER] Screenshot successfully saved to {output_img_path}")
             return output_img_path
@@ -106,7 +112,7 @@ def create_caption_overlay(text, width=1080, height=1920, output_img_path="capti
     text_h = bbox[3] - bbox[1]
     
     x = (width - text_w) / 2
-    y = height - text_h - 250  # Placed at bottom third of 9:16 screen
+    y = height - text_h - 250  # Placed in the lower third section
 
     padding_h = 40
     padding_v = 30
@@ -133,7 +139,7 @@ def build_and_render_reel(
     
     # Set duration based on voiceover audio track
     audio_clip = AudioFileClip(audio_path)
-    duration = audio_clip.duration + 0.5  # Adding 0.5s padding
+    duration = audio_clip.duration + 0.5  # 0.5s safety padding
     print(f"[ENGINE] Reel target duration: {duration:.2f}s")
 
     # Layer 1: Base Dark Canvas
@@ -174,7 +180,7 @@ async def main():
     target_url = os.getenv("TOOL_URL", "https://aicarousels.com")
     caption = os.getenv("OVERLAY_TEXT", f"Check out {target_url.replace('https://', '')}!")
     
-    # Run async pipeline operations
+    # Execute async pipeline tasks
     audio_file = await generate_voiceover(caption, "voiceover.mp3")
     image_file = await capture_stealth_screenshot(target_url, "webpage_capture.png")
 
