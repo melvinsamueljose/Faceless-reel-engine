@@ -224,7 +224,7 @@ def notify_telegram(video_path, script_data):
         "Ready for Stage 2 render!"
     )
 
-    api_endpoint = "[https://api.telegram.org/bot](https://api.telegram.org/bot)" + bot_token + "/sendVideo"
+    api_endpoint = "https://" + "api.telegram.org/bot" + bot_token + "/sendVideo"
     with open(video_path, "rb") as vf:
         requests.post(
             api_endpoint,
