@@ -184,16 +184,17 @@ def notify_telegram(video_path, script_data):
     chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
 
     caption = (
-        f"📹 *Precision Anti-Detect Desktop Capture Complete*\n\n"
+        "📹 *Precision Anti-Detect Desktop Capture Complete*\n\n"
         f"📌 *Hook:* {script_data['hook']}\n"
         f"🎙️ *Voiceover:* {script_data['voiceover']}\n\n"
-        f"Ready for Stage 2 HyperFrames render!"
+        "Ready for Stage 2 render!"
     )
 
-    base_url = "[https://api.telegram.org/bot](https://api.telegram.org/bot)" + str(bot_token) + "/sendVideo"
+    api_endpoint = "https://api.telegram.org/bot" + bot_token + "/sendVideo"
+    
     with open(video_path, "rb") as vf:
         requests.post(
-            base_url,
+            api_endpoint,
             data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"},
             files={"video": vf}
         )
