@@ -7,7 +7,7 @@ import requests
 import edge_tts
 import whisper
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+from playwright_stealth import Stealth
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -237,20 +237,18 @@ async def record_interactive_demo(target_url, output_dir):
         )
         
         page = await context.new_page()
-        await stealth_async(page)
+        await Stealth().apply_stealth_async(page)
         
         print(f"[Playwright Stealth] Attempting live recording for: {target_url}")
         
         try:
             response = await page.goto(target_url, wait_until="networkidle", timeout=20000)
             
-            # Check if Cloudflare block page was returned
             if response and response.status in [403, 503]:
                 raise RuntimeError(f"Cloudflare returned status code {response.status}")
                 
             await page.wait_for_timeout(2000)
             
-            # Interact with live page
             for _ in range(4):
                 await page.mouse.wheel(0, 300)
                 await page.wait_for_timeout(600)
