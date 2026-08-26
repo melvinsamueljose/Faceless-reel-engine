@@ -23,7 +23,7 @@ def clean_voiceover_text(raw_text):
         if re.match(r'^(Action|Camera|Visual|Scene|\d+-\d+s|---)', line, re.IGNORECASE):
             continue
         line = re.sub(r'^VO:\s*', '', line, flags=re.IGNORECASE)
-        line = line.strip('"\''')
+        line = line.strip('"' + "'")
         if line:
             cleaned_lines.append(line)
             
@@ -91,7 +91,7 @@ def authorize_via_telegram(initial_vo, storyboard_text):
         "👉 *Reply to edit text* first!"
     )
 
-    res = requests.post(send_url, json={
+    requests.post(send_url, json={
         "chat_id": CHAT_ID,
         "text": message_text,
         "parse_mode": "Markdown",
@@ -264,9 +264,6 @@ async def record_interactive_demo(target_url, output_dir):
 def assemble_dynamic_reel(raw_video_path, audio_path, srt_path, output_path):
     print("[FFmpeg] Burning styled captions and applying zoompan...")
     
-    # Custom Subtitle Styling:
-    # Font Size: 11 | Alignment: 2 (Bottom Center) | BorderStyle: 3 (Semi-transparent Pill Box)
-    # PrimaryColour: White (&H00FFFFFF) | BackColour: Translucent Black (&H80000000)
     subtitle_style = (
         "FontName=DejaVu Sans,"
         "FontSize=12,"
