@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import re
+import math
 import asyncio
 import requests
 from playwright.async_api import async_playwright
@@ -16,24 +17,17 @@ def get_ai_script(target_url):
     custom_hook = os.getenv("CUSTOM_HOOK", "").strip()
     custom_voiceover = os.getenv("CUSTOM_VOICEOVER", "").strip()
 
-    # Priority 1: Use direct manual inputs if provided by user
     if custom_hook and custom_voiceover:
-        print("[SCRIPT ENGINE] Using manually provided custom Hook and Voiceover.")
-        return {
-            "hook": custom_hook,
-            "voiceover": custom_voiceover
-        }
+        return {"hook": custom_hook, "voiceover": custom_voiceover}
 
-    # Priority 2: Use AI to generate based on custom prompt instructions
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    ai_instructions = os.getenv("AI_PROMPT_INSTRUCTIONS", "Create an engaging 10-second Reel script.").strip()
+    ai_instructions = os.getenv("AI_PROMPT_INSTRUCTIONS", "Create a high-converting 10-second Reel script.").strip()
     domain = target_url.replace("https://", "").replace("http://", "").split("/")[0]
 
     if not api_key:
-        print("[AI SCRIPT] No OPENROUTER_API_KEY found, using standard fallback.")
         return {
-            "hook": custom_hook if custom_hook else "INSANE AI TOOL FOR CREATORS!",
-            "voiceover": custom_voiceover if custom_voiceover else f"Check out {domain}. It automates your workflow in seconds."
+            "hook": custom_hook if custom_hook else "STOP CREATING CAROUSELS MANUALLY!",
+            "voiceover": custom_voiceover if custom_voiceover else f"Check out {domain}. Generate viral social media carousels in seconds using AI."
         }
 
     prompt = (
@@ -47,14 +41,8 @@ def get_ai_script(target_url):
     try:
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            data=json.dumps({
-                "model": "google/gemini-2.0-flash-001",
-                "messages": [{"role": "user", "content": prompt}]
-            }),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            data=json.dumps({"model": "google/gemini-2.0-flash-001", "messages": [{"role": "user", "content": prompt}]}),
             timeout=15
         )
         data = response.json()
@@ -63,23 +51,74 @@ def get_ai_script(target_url):
             if raw_text.startswith("```json"):
                 raw_text = raw_text.replace("```json", "").replace("```", "").strip()
             res_json = json.loads(raw_text)
-            
-            # Allow manual override for individual fields if supplied
             if custom_hook: res_json["hook"] = custom_hook
             if custom_voiceover: res_json["voiceover"] = custom_voiceover
             return res_json
         else:
-            raise KeyError(f"OpenRouter response missing choices: {data}")
-    except Exception as e:
-        print(f"[AI SCRIPT ERROR] {e}. Using fallback values.")
+            raise KeyError(f"OpenRouter missing choices: {data}")
+    except Exception:
         return {
-            "hook": custom_hook if custom_hook else "STOP MAKING CAROUSELS MANUALLY!",
-            "voiceover": custom_voiceover if custom_voiceover else f"If you are building digital content, {domain} automates your workflow instantly."
+            "hook": custom_hook if custom_hook else "CREATE CAROUSELS 10X FASTER!",
+            "voiceover": custom_voiceover if custom_voiceover else f"If you build content, {domain} automates your design workflow instantly."
         }
 
+async def inject_visual_cursor(page):
+    cursor_script = """
+    () => {
+        const cursor = document.createElement('div');
+        cursor.id = 'playwright-visual-cursor';
+        cursor.style.position = 'fixed';
+        cursor.style.top = '0px';
+        cursor.style.left = '0px';
+        cursor.style.width = '20px';
+        cursor.style.height = '20px';
+        cursor.style.border = '2px solid white';
+        cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.8)';
+        cursor.style.borderRadius = '50%';
+        cursor.style.pointerEvents = 'none';
+        cursor.style.zIndex = '99999999';
+        cursor.style.transition = 'transform 0.15s ease, background-color 0.15s ease';
+        cursor.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+        document.body.appendChild(cursor);
+
+        window.addEventListener('mousemove', e => {
+            cursor.style.left = e.clientX - 10 + 'px';
+            cursor.style.top = e.clientY - 10 + 'px';
+        });
+        window.addEventListener('mousedown', () => {
+            cursor.style.transform = 'scale(0.7)';
+            cursor.style.backgroundColor = 'rgba(0, 255, 150, 0.9)';
+        });
+        window.addEventListener('mouseup', () => {
+            cursor.style.transform = 'scale(1)';
+            cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.8)';
+        });
+    }
+    """
+    await page.evaluate(cursor_script)
+
+async def human_move_mouse(page, start_x, start_y, end_x, end_y, steps=35):
+    """Generates keyframed smooth mouse movement using cubic bezier easing."""
+    for i in range(1, steps + 1):
+        t = i / steps
+        # Ease-in-out quadratic curve math
+        ease_t = 2 * t * t if t < 0.5 else 1 - math.pow(-2 * t + 2, 2) / 2
+        
+        curr_x = start_x + (end_x - start_x) * ease_t
+        curr_y = start_y + (end_y - start_y) * ease_t
+        
+        await page.mouse.move(curr_x, curr_y)
+        await asyncio.sleep(0.012)  # ~60fps smooth interpolation
+
+async def human_scroll(page, scroll_amount, steps=25):
+    """Keyframed scroll prevent sharp jumps."""
+    per_step = scroll_amount / steps
+    for _ in range(steps):
+        await page.mouse.wheel(0, per_step)
+        await asyncio.sleep(0.02)
+
 async def capture_screen(target_url, output_path="raw_desktop.webm"):
-    action = os.getenv("CAPTURE_ACTION", "click_try").strip().lower()
-    print(f"[RECORDER] Launching desktop recorder for {target_url} (Action: {action})...")
+    print(f"[RECORDER] Launching precision recorder for {target_url}...")
     
     async with async_playwright() as p:
         browser = await p.firefox.launch(headless=True)
@@ -90,26 +129,42 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
         )
         page = await context.new_page()
         try:
-            await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
-            await asyncio.sleep(2)
+            await page.goto(target_url, wait_until="networkidle", timeout=60000)
+            await inject_visual_cursor(page)
             
-            if action == "click_try":
-                btn = page.locator("a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started'), a.btn").first
-                if await btn.is_visible():
-                    await btn.click()
-                    await asyncio.sleep(4)
-                else:
-                    await page.mouse.wheel(0, 600)
-                    await asyncio.sleep(4)
-            elif action == "scroll":
-                await page.mouse.wheel(0, 500)
-                await asyncio.sleep(2)
-                await page.mouse.wheel(0, 500)
-                await asyncio.sleep(2)
-            elif action == "full_page":
-                for _ in range(3):
-                    await page.mouse.wheel(0, 400)
-                    await asyncio.sleep(1.5)
+            # Start initial mouse position at top-left off-center
+            curr_x, curr_y = 200, 200
+            await page.mouse.move(curr_x, curr_y)
+            await asyncio.sleep(1.0)
+
+            # Smoothly scroll header section
+            await human_scroll(page, 300, steps=20)
+            await asyncio.sleep(0.8)
+
+            # Locate primary call-to-action button dynamically
+            btn = page.locator("a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started'), a.btn").first
+            
+            if await btn.is_visible():
+                box = await btn.bounding_box()
+                if box:
+                    target_x = box["x"] + box["width"] / 2
+                    target_y = box["y"] + box["height"] / 2
+                    
+                    # Keyframe smooth move to button
+                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=40)
+                    await asyncio.sleep(0.4) # Hover pause
+                    
+                    # Click with natural hold delay
+                    await page.mouse.down()
+                    await asyncio.sleep(0.12)
+                    await page.mouse.up()
+                    
+                    await asyncio.sleep(3.0)
+            else:
+                # Fallback multi-stage scroll if no primary button found
+                await human_scroll(page, 500, steps=30)
+                await asyncio.sleep(1.5)
+
         except Exception as e:
             print(f"[CAPTURE WARNING] {e}")
         finally:
@@ -120,7 +175,7 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
     videos = [os.path.join(raw_dir, f) for f in os.listdir(raw_dir) if f.endswith(".webm")]
     if videos:
         os.rename(max(videos, key=os.path.getctime), output_path)
-        print(f"[RECORDER] Raw desktop footage saved: {output_path}")
+        print(f"[RECORDER] Smooth desktop footage saved: {output_path}")
 
 def notify_telegram(video_path, script_data):
     raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -128,19 +183,15 @@ def notify_telegram(video_path, script_data):
     chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
 
     caption = (
-        f"📹 *Raw 1920x1080 Desktop Footage Captured*\n\n"
+        f"📹 *Precision Smooth Desktop Capture Complete*\n\n"
         f"📌 *Hook:* {script_data['hook']}\n"
         f"🎙️ *Voiceover:* {script_data['voiceover']}\n\n"
-        f"Ready for Stage 2 HyperFrames rendering!"
+        f"Ready for Stage 2 render!"
     )
 
     url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){bot_token}/sendVideo"
     with open(video_path, "rb") as vf:
-        requests.post(
-            url,
-            data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"},
-            files={"video": vf}
-        )
+        requests.post(url, data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}, files={"video": vf})
 
 async def main():
     url = os.getenv("TARGET_URL", "[https://aicarousels.com](https://aicarousels.com)")
