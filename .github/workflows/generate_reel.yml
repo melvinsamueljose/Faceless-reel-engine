@@ -51,8 +51,8 @@ jobs:
 
       - name: Install Python & Node Dependencies
         run: |
-          pip install playwright camoufox edge-tts requests Pillow
-          python -m camoufox fetch
+          pip install playwright requests Pillow
+          playwright install firefox
           npm install -g hyperframes
 
       - name: Execute Stage 1 (Capture Raw Footage)
