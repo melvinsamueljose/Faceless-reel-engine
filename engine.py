@@ -2,14 +2,11 @@ import os
 import sys
 import json
 import asyncio
-import math
-import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# --- CRITICAL FIX FOR MOVIEPY + PILLOW 10+ COMPATIBILITY ---
+# --- MOVIEPY + PILLOW 10+ COMPATIBILITY ---
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
-# ----------------------------------------------------------
 
 import edge_tts
 from playwright.async_api import async_playwright
@@ -17,12 +14,14 @@ from playwright.async_api import async_playwright
 try:
     from moviepy.editor import (
         ColorClip,
+        VideoFileClip,
         ImageClip,
         CompositeVideoClip,
         AudioFileClip
     )
 except ImportError:
     from moviepy.video.VideoClip import ColorClip, ImageClip
+    from moviepy.video.io.VideoFileClip import VideoFileClip
     from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
     from moviepy.audio.io.AudioFileClip import AudioFileClip
 
@@ -31,33 +30,30 @@ CANVAS_HEIGHT = 1920
 DEFAULT_FPS = 30
 
 def generate_script_with_openrouter(target_url):
-    """Uses OpenRouter API to construct a high-converting reel hook & voiceover script."""
+    """Generates viral reel script via OpenRouter."""
     api_key = os.getenv("OPENROUTER_API_KEY")
     domain = target_url.replace("https://", "").replace("http://", "").split("/")[0]
 
     if not api_key:
-        print("[AI SCRIPT] No OPENROUTER_API_KEY found. Falling back to structured dynamic script.")
         return {
-            "hook": f"Stop wasting hours on design! Check out {domain}.",
-            "voiceover": f"If you want to build social media carousels in seconds, {domain} uses AI to write your copy and format high-converting slides instantly. Try it out today!"
+            "hook": f"Stop making carousels manually!",
+            "voiceover": f"If you need social media carousels fast, check out {domain}. Just click Create Carousel, let the AI generate your slides, and customize everything automatically!"
         }
 
-    print("[AI SCRIPT] Querying OpenRouter for viral reel script...")
     prompt = f"""
-    Create a high-converting 15-second Instagram Reel / TikTok script promoting the website tool: {target_url}.
-    Return strictly JSON with two keys:
-    1. "hook": A short, punchy 5-8 word caption to render on screen.
-    2. "voiceover": A compelling 30-40 word script for text-to-speech voiceover detailing what the tool does and its main benefit.
-    Format response strictly as valid JSON with no extra commentary.
+    Create a high-converting 10-second reel script for {target_url}.
+    Return strictly JSON:
+    {{
+      "hook": "A short 5-7 word on-screen caption",
+      "voiceover": "A crisp 25-30 word script describing the button click and live generator."
+    }}
     """
 
     try:
+        import requests
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             data=json.dumps({
                 "model": "google/gemini-2.5-flash",
                 "messages": [{"role": "user", "content": prompt}]
@@ -66,85 +62,97 @@ def generate_script_with_openrouter(target_url):
         )
         data = response.json()
         raw_text = data['choices'][0]['message']['content'].strip()
-        # Strip potential markdown formatting from LLM response
         if raw_text.startswith("```json"):
             raw_text = raw_text.replace("```json", "").replace("```", "").strip()
-        parsed = json.loads(raw_text)
-        print(f"[AI SCRIPT] Generated Hook: {parsed.get('hook')}")
-        return parsed
+        return json.loads(raw_text)
     except Exception as e:
-        print(f"[AI SCRIPT ERROR] {e}. Falling back to default script.")
+        print(f"[AI SCRIPT ERROR] {e}")
         return {
-            "hook": f"The fastest way to generate carousels!",
-            "voiceover": f"Crafting engaging carousels for social media takes too long. {domain} handles design and writing automatically using AI."
+            "hook": "The fastest AI Carousel Generator!",
+            "voiceover": f"Watch how easy it is to create carousels with {domain}. Simply click generate and let AI build your posts!"
         }
 
 async def generate_voiceover(text, output_audio_path="voiceover.mp3"):
-    """Generates audio voiceover using edge-tts and verifies file existence."""
-    print(f"[TTS] Synthesizing speech: '{text}'...")
+    """Synthesizes voiceover speech via edge-tts."""
+    print(f"[TTS] Synthesizing speech...")
     communicate = edge_tts.Communicate(text, voice="en-US-ChristopherNeural")
     await communicate.save(output_audio_path)
-    
-    if not os.path.exists(output_audio_path) or os.path.getsize(output_audio_path) == 0:
-        raise RuntimeError("[TTS ERROR] Audio file generation failed or resulted in 0 bytes!")
-    
-    print(f"[TTS] Voiceover successfully saved ({os.path.getsize(output_audio_path)} bytes).")
     return output_audio_path
 
-async def capture_stealth_screenshot(url, output_img_path="webpage_capture.png"):
+async def record_interactive_session(url, record_dir="recordings", duration=10):
     """
-    Scrapes the target page using Playwright with stealth configurations, 
-    scrolling down slightly to capture core features.
+    Launches Playwright, interacts with buttons/elements on screen, 
+    and outputs a video recording file.
     """
-    print(f"[STEALTH SCRAPER] Navigating to {url}...")
+    os.makedirs(record_dir, exist_ok=True)
+    print(f"[INTERACTIVE SCRAPER] Recording interaction flow on {url}...")
+    
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage"
-            ]
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
         )
         context = await browser.new_context(
-            viewport={"width": 1080, "height": 2400},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            viewport={"width": 1080, "height": 1920},
+            record_video_dir=record_dir,
+            record_video_size={"width": 1080, "height": 1920},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
         page = await context.new_page()
-        
-        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
-        
+
         try:
-            await page.goto(url, wait_until="networkidle", timeout=60000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
             await asyncio.sleep(2)
-            # Smooth scroll down to expose visual features
-            await page.evaluate("window.scrollBy(0, 400);")
-            await asyncio.sleep(2)
-            await page.screenshot(path=output_img_path, full_page=False)
-            print(f"[STEALTH SCRAPER] Screenshot captured: {output_img_path}")
-            return output_img_path
+
+            # Look for common CTA buttons like 'Create Carousel', 'Get Started', 'Try for free'
+            cta_selectors = [
+                "a:has-text('Create Carousel')",
+                "button:has-text('Create Carousel')",
+                "a:has-text('Get Started')",
+                "button:has-text('Get Started')",
+                "a.btn",
+                "button"
+            ]
+
+            clicked = False
+            for selector in cta_selectors:
+                if await page.locator(selector).first.is_visible():
+                    print(f"[INTERACTIVE SCRAPER] Clicking CTA element: {selector}")
+                    await page.locator(selector).first.click()
+                    clicked = True
+                    break
+
+            if not clicked:
+                print("[INTERACTIVE SCRAPER] CTA button not found, falling back to mouse scroll.")
+                await page.mouse.wheel(0, 800)
+
+            # Allow time for navigation and dynamic animation rendering
+            await asyncio.sleep(duration - 3)
+
         except Exception as e:
-            print(f"[STEALTH SCRAPER ERROR] {e}")
-            return None
+            print(f"[INTERACTIVE SCRAPER ERROR] {e}")
         finally:
             await context.close()
             await browser.close()
 
+    # Retrieve generated webm file path
+    files = [os.path.join(record_dir, f) for f in os.listdir(record_dir) if f.endswith(".webm")]
+    if files:
+        latest_file = max(files, key=os.path.getctime)
+        print(f"[INTERACTIVE SCRAPER] Successfully captured video: {latest_file}")
+        return latest_file
+    return None
+
 def create_caption_overlay(text, width=1080, height=1920, output_img_path="caption_overlay.png"):
-    """Renders high-visibility subtitle overlay card."""
+    """Generates styled subtitle card."""
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    if os.path.exists(font_path):
-        font = ImageFont.truetype(font_path, 50)
-    else:
-        font = ImageFont.load_default()
+    font = ImageFont.truetype(font_path, 48) if os.path.exists(font_path) else ImageFont.load_default()
 
     words = text.split()
-    lines = []
-    current_line = []
+    lines, current_line = [], []
 
     for word in words:
         current_line.append(word)
@@ -158,97 +166,70 @@ def create_caption_overlay(text, width=1080, height=1920, output_img_path="capti
         lines.append(" ".join(current_line))
 
     wrapped_text = "\n".join(lines)
-    
     bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font, spacing=14)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
-    
-    x = (width - text_w) / 2
-    y = height - text_h - 280  # Positioned cleanly in lower third
+    text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-    padding_h = 45
-    padding_v = 30
+    x = (width - text_w) / 2
+    y = height - text_h - 260
+
     draw.rounded_rectangle(
-        [x - padding_h, y - padding_v, x + text_w + padding_h, y + text_h + padding_v],
-        radius=24,
-        fill=(15, 15, 15, 235),
-        outline=(0, 255, 170, 255),
-        width=4
+        [x - 40, y - 25, x + text_w + 40, y + text_h + 25],
+        radius=20, fill=(15, 15, 15, 235), outline=(0, 255, 170, 255), width=4
     )
-    
     draw.multiline_text((x, y), wrapped_text, font=font, fill=(255, 255, 255, 255), align="center", spacing=14)
     img.save(output_img_path)
     return output_img_path
 
-def build_and_render_reel(captured_img_path, audio_path, overlay_text, output_path="final_reel.mp4"):
-    print("[ENGINE] Assembling final timeline...")
-    
+def build_and_render_reel(video_rec_path, audio_path, overlay_text, output_path="final_reel.mp4"):
+    """Composites recorded user workflow, audio, and captions into final reel."""
+    print("[ENGINE] Compositing interactive video timeline...")
     audio_clip = AudioFileClip(audio_path)
-    duration = max(audio_clip.duration + 0.5, 5.0)  # Ensure minimum 5-second video length
-    print(f"[ENGINE] Calculated video duration: {duration:.2f} seconds.")
+    duration = audio_clip.duration + 0.5
 
-    clips = []
+    clips = [ColorClip(size=(CANVAS_WIDTH, CANVAS_HEIGHT), color=(15, 15, 18), duration=duration)]
 
-    # Layer 1: Dark background
-    bg_base = ColorClip(size=(CANVAS_WIDTH, CANVAS_HEIGHT), color=(15, 15, 18), duration=duration)
-    clips.append(bg_base)
-
-    # Layer 2: Webpage Capture with dynamic panning down effect
-    if captured_img_path and os.path.exists(captured_img_path):
-        web_clip = ImageClip(captured_img_path).set_duration(duration)
-        web_clip = web_clip.resize(width=CANVAS_WIDTH)
+    if video_rec_path and os.path.exists(video_rec_path):
+        screen_clip = VideoFileClip(video_rec_path)
+        if screen_clip.duration < duration:
+            screen_clip = screen_clip.loop(duration=duration)
+        else:
+            screen_clip = screen_clip.subclip(0, duration)
         
-        # Animate visual panning down over the video's duration
-        def scroll_effect(t):
-            y_pos = -int((t / duration) * 250)
-            return ('center', y_pos)
-            
-        web_clip = web_clip.set_position(scroll_effect)
-        clips.append(web_clip)
+        screen_clip = screen_clip.resize(height=CANVAS_HEIGHT)
+        if screen_clip.w < CANVAS_WIDTH:
+            screen_clip = screen_clip.resize(width=CANVAS_WIDTH)
+        
+        screen_clip = screen_clip.crop(
+            x_center=screen_clip.w / 2, y_center=screen_clip.h / 2,
+            width=CANVAS_WIDTH, height=CANVAS_HEIGHT
+        )
+        clips.append(screen_clip)
 
-    # Layer 3: Text Card Hook & Caption
     if overlay_text:
         caption_img = create_caption_overlay(overlay_text, CANVAS_WIDTH, CANVAS_HEIGHT)
-        caption_clip = ImageClip(caption_img).set_duration(duration)
-        clips.append(caption_clip)
+        clips.append(ImageClip(caption_img).set_duration(duration))
 
-    # Composite & Render output
-    final_video = CompositeVideoClip(clips, size=(CANVAS_WIDTH, CANVAS_HEIGHT))
-    final_video = final_video.set_audio(audio_clip)
-
-    print(f"[ENGINE] Exporting video to '{output_path}' via FFMPEG...")
-    final_video.write_videofile(
-        output_path,
-        fps=DEFAULT_FPS,
-        codec="libx264",
-        audio_codec="aac",
-        preset="ultrafast",
-        threads=4
-    )
+    final_video = CompositeVideoClip(clips, size=(CANVAS_WIDTH, CANVAS_HEIGHT)).set_audio(audio_clip)
+    final_video.write_videofile(output_path, fps=DEFAULT_FPS, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4)
 
     final_video.close()
     audio_clip.close()
-    print("[ENGINE] Reel generation complete!")
 
 async def main():
     target_url = os.getenv("TOOL_URL", "[https://aicarousels.com](https://aicarousels.com)")
     
-    # 1. Generate hook and voiceover script
     script_data = generate_script_with_openrouter(target_url)
     hook_text = script_data.get("hook")
     voiceover_text = script_data.get("voiceover")
 
-    # 2. Concurrently/Sequentially generate assets
-    audio_file = await generate_voiceover(voiceover_text, "voiceover.mp3")
-    image_file = await capture_stealth_screenshot(target_url, "webpage_capture.png")
+    # Save script verification data to text file for Telegram delivery
+    with open("script_summary.json", "w") as f:
+        json.dump({"hook": hook_text, "voiceover": voiceover_text}, f, indent=2)
 
-    # 3. Compile timeline & export
-    build_and_render_reel(
-        captured_img_path=image_file,
-        audio_path=audio_file,
-        overlay_text=hook_text,
-        output_path="final_reel.mp4"
-    )
+    audio_file = await generate_voiceover(voiceover_text, "voiceover.mp3")
+    rec_video = await record_interactive_session(target_url, duration=10)
+
+    build_and_render_reel(rec_video, audio_file, hook_text, "final_reel.mp4")
 
 if __name__ == "__main__":
     asyncio.run(main())
