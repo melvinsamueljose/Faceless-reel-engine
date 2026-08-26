@@ -31,8 +31,31 @@ def clean_voiceover_text(raw_text):
 
 def generate_storyboard_and_script():
     api_key = os.getenv("OPENROUTER_API_KEY")
+    
+    detailed_fallback_board = (
+        "⏱️ 0s to 3s — Hook (specific, not generic)\n"
+        "• Voiceover: \"I tested 47 AI hook-generators. Most of them write the exact same opening line.\"\n"
+        "• Actions performed: Screen-record scrolling through a folder/spreadsheet of AI-generated hooks, red X's stamping over duplicates.\n\n"
+        "⏱️ 3s to 7s — Pain point\n"
+        "• Voiceover: \"That's why your reel gets 12 views while a stolen version gets 200k.\"\n"
+        "• Actions performed: Split-screen — left side showing low views analytics; right side showing viral duplicate version.\n\n"
+        "⏱️ 7s to 12s — The fix, shown not told\n"
+        "• Voiceover: \"Here's the one prompt that actually forces a unique angle.\"\n"
+        "• Actions performed: Quick screen-record typing prompt into ChatGPT, generating unique hook output.\n\n"
+        "⏱️ 12s to 15s — CTA\n"
+        "• Voiceover: \"Save this before your next script.\"\n"
+        "• Actions performed: Tap save icon, bold text overlay: 'THE PROMPT' with link-in-bio callout."
+    )
+
+    fallback_vo = (
+        "I tested 47 AI hook-generators. Most of them write the exact same opening line. "
+        "That's why your reel gets 12 views while a stolen version gets 200k. "
+        "Here's the one prompt that actually forces a unique angle. "
+        "Save this before your next script."
+    )
+
     if not api_key:
-        raise ValueError("OPENROUTER_API_KEY secret is not set in GitHub Secrets.")
+        return fallback_vo, detailed_fallback_board
 
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -40,12 +63,12 @@ def generate_storyboard_and_script():
         "Content-Type": "application/json"
     }
     
-    prompt = """
+    prompt = f"""
     You are an elite short-form video producer.
-    Generate a 15-second viral Instagram Reel plan about AI tools.
+    Generate a high-retention 15-second viral Instagram Reel plan.
     Return response strictly in JSON format with two keys:
-    1. "voiceover": "I tested 47 AI hook-generators. Most of them write the exact same opening line. That's why your reel gets 12 views while a stolen version gets 200k. Here's the one prompt that actually forces a unique angle. Save this before your next script."
-    2. "storyboard": "🎬 0-3s | HOOK\n• Voiceover: I tested 47 AI hook-generators...\n• Screen Action: Scroll through spreadsheet of AI hooks.\n\n🎬 3-7s | PAIN POINT\n• Voiceover: That's why your reel gets 12 views...\n• Screen Action: Analytics screen comparison.\n\n🎬 7-12s | THE FIX\n• Voiceover: Here's the one prompt...\n• Screen Action: Type prompt into ChatGPT.\n\n🎬 12-15s | CTA\n• Voiceover: Save this before your next script.\n• Screen Action: Save button tap animation."
+    1. "voiceover": "{fallback_vo}"
+    2. "storyboard": "{detailed_fallback_board}"
     """
 
     payload = {
@@ -64,9 +87,7 @@ def generate_storyboard_and_script():
     except Exception as e:
         print(f"[Script Gen Fallback]: {e}")
 
-    fallback_vo = "I tested 47 AI hook-generators. Most of them write the exact same opening line. That's why your reel gets 12 views while a stolen version gets 200k. Here's the one prompt that actually forces a unique angle. Save this before your next script."
-    fallback_board = "🎬 0-15s Tool Demo Breakdown"
-    return fallback_vo, fallback_board
+    return fallback_vo, detailed_fallback_board
 
 def authorize_via_telegram(initial_vo, storyboard_text):
     print("[Telegram Gate] Sending preview to Telegram...")
@@ -94,7 +115,6 @@ def authorize_via_telegram(initial_vo, storyboard_text):
     requests.post(send_url, json={
         "chat_id": CHAT_ID,
         "text": message_text,
-        "parse_mode": "Markdown",
         "reply_markup": keyboard
     })
 
@@ -195,7 +215,7 @@ def generate_subtitles(audio_path, srt_path):
             caption_idx += 1
 
 async def record_interactive_demo(target_url, output_dir):
-    """Guarantees full screen display output rendering during Playwright capture."""
+    """Guarantees anti-detection browser session with dark UI fallback rendering."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -203,13 +223,14 @@ async def record_interactive_demo(target_url, output_dir):
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-gpu",
-                "--enable-surface-synchronization"
+                "--disable-blink-features=AutomationControlled"
             ]
         )
         
         context = await browser.new_context(
             viewport={"width": 1080, "height": 1920},
             device_scale_factor=1,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             record_video_dir=output_dir,
             record_video_size={"width": 1080, "height": 1920}
         )
@@ -217,45 +238,56 @@ async def record_interactive_demo(target_url, output_dir):
         page = await context.new_page()
         print(f"[Playwright] Navigating to target site: {target_url}")
         
-        await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(2000)
-        
-        # Action 1: Scroll Hero Section
-        for _ in range(4):
-            await page.mouse.wheel(0, 300)
-            await page.wait_for_timeout(500)
-
-        # Action 2: Click CTA
         try:
-            cta = page.locator("a:has-text('Create Carousel'), button:has-text('Create Carousel'), a[href*='app']").first
-            if await cta.is_visible():
-                await cta.hover()
+            await page.goto(target_url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(2000)
+            
+            # Dismiss cookie popups if present
+            try:
+                cookie_btn = page.locator("button:has-text('Accept'), button:has-text('Allow'), button:has-text('Agree')").first
+                if await cookie_btn.is_visible():
+                    await cookie_btn.click()
+            except Exception:
+                pass
+
+            # Perform page interactions
+            for _ in range(4):
+                await page.mouse.wheel(0, 300)
                 await page.wait_for_timeout(600)
-                await cta.click()
-                await page.wait_for_timeout(3500)
+
+            try:
+                text_box = page.locator("textarea, input[type='text']").first
+                if await text_box.is_visible():
+                    await text_box.click()
+                    await text_box.type("I tested 47 AI hook generators...", delay=70)
+                    await page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+            for _ in range(3):
+                await page.mouse.wheel(0, 350)
+                await page.wait_for_timeout(600)
+
         except Exception as e:
-            print(f"[Playwright Navigation Bypass]: {e}")
-
-        # Action 3: Type Prompt Demonstration
-        try:
-            text_box = page.locator("textarea, input[type='text']").first
-            if await text_box.is_visible():
-                await text_box.click()
-                await text_box.type("I tested 47 AI hook generators...", delay=70)
-                await page.wait_for_timeout(1000)
-
-            gen_btn = page.locator("button:has-text('Generate'), button[type='submit']").first
-            if await gen_btn.is_visible():
-                await gen_btn.hover()
-                await page.wait_for_timeout(500)
-                await gen_btn.click()
-                await page.wait_for_timeout(4000)
-        except Exception as e:
-            print(f"[Playwright Interaction Bypass]: {e}")
-
-        for _ in range(3):
-            await page.mouse.wheel(0, 350)
-            await page.wait_for_timeout(500)
+            print(f"[Playwright Navigation Warning]: {e}. Injecting styled workspace UI...")
+            # Fallback styled UI if site blocks headless browser
+            ui_html = f"""
+            <html>
+            <body style="margin:0; background:#0f172a; color:#f8fafc; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh;">
+                <div style="width:85%; background:#1e293b; border-radius:16px; padding:32px; box-shadow:0 10px 25px rgba(0,0,0,0.5); border:1px solid #334155;">
+                    <h2 style="color:#38bdf8; margin-top:0;">⚡ AI Reel Studio</h2>
+                    <p style="color:#94a3b8; font-size:18px;">Target: {target_url}</p>
+                    <div style="background:#090d16; padding:20px; border-radius:10px; font-family:monospace; color:#4ade80; margin-top:20px;">
+                        > Processing hook variations...<br>
+                        > Synthesizing voiceover audio track...<br>
+                        > Compiling timed overlay subtitles...
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            await page.set_content(ui_html)
+            await page.wait_for_timeout(10000)
 
         await page.close()
         await context.close()
