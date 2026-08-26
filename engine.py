@@ -13,46 +13,57 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def clean_voiceover_text(raw_text):
-    """Strips scene labels, VO headers, and timestamps from user input."""
-    vo_matches = re.findall(r'VO:\s*["“]([^"”]+)["”]', raw_text, re.IGNORECASE)
-    if vo_matches:
-        return " ".join(vo_matches)
+    """Extracts strictly the spoken voiceover script, stripping all storyboard markers."""
+    # 1. Try extracting text inside the explicit Spoken Voiceover section
+    script_match = re.search(r'🎙️\s*\*?Spoken Voiceover Script\*?:?\s*[\r\n]+["“]?([^"”]+)["”]?', raw_text, re.DOTALL | re.IGNORECASE)
+    if script_match and len(script_match.group(1).strip()) > 10:
+        clean = script_match.group(1).strip()
+        # Remove any lingering trailing quotes or markdown
+        return re.sub(r'^["“]|["”]$', '', clean).strip()
 
+    # 2. Collect lines following "Voiceover:" patterns
+    vo_matches = re.findall(r'•?\s*Voiceover:\s*["“]?([^"”\n]+)["”]?', raw_text, re.IGNORECASE)
+    if vo_matches:
+        return " ".join([v.strip() for v in vo_matches if v.strip()])
+
+    # 3. Fallback: Strip metadata lines line-by-line
     cleaned_lines = []
     for line in raw_text.splitlines():
         line = line.strip()
-        if re.match(r'^(Action|Camera|Visual|Scene|\d+-\d+s|---)', line, re.IGNORECASE):
+        if not line:
             continue
-        line = re.sub(r'^VO:\s*', '', line, flags=re.IGNORECASE)
+        if re.search(r'(⏱️|Hook|Pain point|The fix|CTA|Actions performed|Spoken Voiceover|Tap \*Authorize\*|Reply to edit)', line, re.IGNORECASE):
+            continue
+        line = re.sub(r'^[•\-\*\s]+', '', line)
         line = line.strip('"' + "'")
         if line:
             cleaned_lines.append(line)
             
-    return " ".join(cleaned_lines)
+    return " ".join(cleaned_lines) if cleaned_lines else raw_text
 
 def generate_storyboard_and_script():
     api_key = os.getenv("OPENROUTER_API_KEY")
     
     detailed_fallback_board = (
         "⏱️ 0s to 3s — Hook (specific, not generic)\n"
-        "• Voiceover: \"I tested 47 AI hook-generators. Most of them write the exact same opening line.\"\n"
-        "• Actions performed: Dynamic UI loading with real-time hook analysis counters.\n\n"
+        "• Voiceover: \"Stop spending two hours designing single carousels manually.\"\n"
+        "• Actions performed: Live UI demo entering topic into aiCarousels.com builder.\n\n"
         "⏱️ 3s to 7s — Pain point\n"
-        "• Voiceover: \"That's why your reel gets 12 views while a stolen version gets 200k.\"\n"
-        "• Actions performed: Comparison analytics dashboard showing low vs viral reach.\n\n"
+        "• Voiceover: \"Most AI carousel tools output ugly layouts that break your brand.\"\n"
+        "• Actions performed: Contrast preview showing default template vs custom brand palette.\n\n"
         "⏱️ 7s to 12s — The fix, shown not told\n"
-        "• Voiceover: \"Here's the one prompt that actually forces a unique angle.\"\n"
-        "• Actions performed: Live terminal typing sequence rendering high-converting prompt.\n\n"
+        "• Voiceover: \"aiCarousels automatically formats your text and resizes every slide in seconds.\"\n"
+        "• Actions performed: Fast-forward UI rendering auto-layout features and font pairings.\n\n"
         "⏱️ 12s to 15s — CTA\n"
-        "• Voiceover: \"Save this before your next script.\"\n"
-        "• Actions performed: Callout card pulse with link-in-bio prompt overlay."
+        "• Voiceover: \"Save this reel to upgrade your visual content workflow.\"\n"
+        "• Actions performed: Callout card pulse showing export options for Instagram and LinkedIn."
     )
 
     fallback_vo = (
-        "I tested 47 AI hook-generators. Most of them write the exact same opening line. "
-        "That's why your reel gets 12 views while a stolen version gets 200k. "
-        "Here's the one prompt that actually forces a unique angle. "
-        "Save this before your next script."
+        "Stop spending two hours designing single carousels manually. "
+        "Most AI carousel tools output ugly layouts that break your brand. "
+        "aiCarousels automatically formats your text and resizes every slide in seconds. "
+        "Save this reel to upgrade your visual content workflow."
     )
 
     if not api_key:
@@ -66,7 +77,7 @@ def generate_storyboard_and_script():
     
     prompt = f"""
     You are an elite short-form video producer.
-    Generate a high-retention 15-second viral Instagram Reel plan.
+    Generate a high-retention 15-second viral Instagram Reel plan for aiCarousels.
     Return response strictly in JSON format with two keys:
     1. "voiceover": "{fallback_vo}"
     2. "storyboard": "{detailed_fallback_board}"
@@ -189,7 +200,6 @@ def format_timestamp(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 def generate_subtitles(audio_path, srt_path):
-    """Generates short, 2-3 word captions with strict line breaking."""
     print("[Whisper] Extracting word-level timestamps...")
     model = whisper.load_model("tiny")
     result = model.transcribe(audio_path, word_timestamps=True)
@@ -216,7 +226,6 @@ def generate_subtitles(audio_path, srt_path):
             caption_idx += 1
 
 async def record_interactive_demo(target_url, output_dir):
-    """Uses stealth patches to attempt live site capture, falling back gracefully if blocked."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -242,7 +251,7 @@ async def record_interactive_demo(target_url, output_dir):
         print(f"[Playwright Stealth] Attempting live recording for: {target_url}")
         
         try:
-            response = await page.goto(target_url, wait_until="networkidle", timeout=20000)
+            response = await page.goto(target_url, wait_until="networkidle", timeout=15000)
             
             if response and response.status in [403, 503]:
                 raise RuntimeError(f"Cloudflare returned status code {response.status}")
@@ -251,56 +260,95 @@ async def record_interactive_demo(target_url, output_dir):
             
             for _ in range(4):
                 await page.mouse.wheel(0, 300)
-                await page.wait_for_timeout(600)
+                await page.wait_for_timeout(800)
 
         except Exception as e:
-            print(f"[Playwright Stealth Warning]: {e}. Fallback UI activated...")
+            print(f"[Playwright Stealth Warning]: {e}. Activating visual fallback UI...")
             
-            dynamic_ui_html = f"""
+            fallback_html = f"""
             <!DOCTYPE html>
-            <html>
+            <html style="background-color: #0b0f19; height: 100vh;">
             <head>
+                <meta charset="UTF-8">
                 <style>
-                    * {{ box-sizing: border-box; }}
-                    body {{
+                    html, body {{
                         margin: 0; padding: 0;
                         width: 1080px; height: 1920px;
-                        background: linear-gradient(135deg, #090d16 0%, #111827 50%, #0f172a 100%);
-                        color: #f8fafc; font-family: sans-serif;
+                        background: #0b0f19 !important;
+                        color: #ffffff !important;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                         display: flex; flex-direction: column;
                         align-items: center; justify-content: center;
                     }}
-                    .card {{
-                        width: 880px; background: rgba(30, 41, 59, 0.7);
-                        border: 2px solid rgba(255, 255, 255, 0.1);
-                        border-radius: 24px; padding: 48px;
+                    .container {{
+                        width: 900px;
+                        background: #161f33;
+                        border: 2px solid #2a3859;
+                        border-radius: 32px;
+                        padding: 60px;
+                        box-shadow: 0 20px 50px rgba(0,0,0,0.5);
                     }}
-                    .title {{ font-size: 42px; font-weight: 800; color: #60a5fa; }}
-                    .console {{
-                        background: #020617; border-radius: 16px;
-                        padding: 28px; font-family: monospace; font-size: 24px;
-                        color: #38bdf8; margin-top: 32px; min-height: 180px;
+                    .badge {{
+                        background: #3b82f6;
+                        color: #ffffff;
+                        padding: 12px 24px;
+                        border-radius: 20px;
+                        font-weight: 800;
+                        font-size: 24px;
+                        display: inline-block;
+                        margin-bottom: 24px;
+                    }}
+                    .title {{
+                        font-size: 56px;
+                        font-weight: 900;
+                        color: #60a5fa;
+                        margin-bottom: 16px;
+                    }}
+                    .url {{
+                        color: #94a3b8;
+                        font-size: 28px;
+                        margin-bottom: 40px;
+                    }}
+                    .terminal {{
+                        background: #030712;
+                        border: 1px solid #1f2937;
+                        border-radius: 20px;
+                        padding: 40px;
+                        font-family: monospace;
+                        font-size: 32px;
+                        color: #38bdf8;
+                        min-height: 250px;
+                        line-height: 1.6;
                     }}
                 </style>
             </head>
             <body>
-                <div class="card">
-                    <div style="background:#3b82f6; display:inline-block; padding:8px 18px; border-radius:20px; font-weight:bold;">PLUTUS LAB AI</div>
-                    <div class="title">Hook Engine Analysis</div>
-                    <p style="color:#94a3b8; font-size:20px;">Target: {target_url}</p>
-                    <div class="console" id="terminal">> Initializing workflow automation...</div>
+                <div class="container">
+                    <div class="badge">PLUTUS LAB AUTOMATION</div>
+                    <div class="title">Visual Engine Active</div>
+                    <div class="url">Processing: {target_url}</div>
+                    <div class="terminal" id="term">> Analyzing layout parameters...</div>
                 </div>
                 <script>
-                    const term = document.getElementById('terminal');
-                    const logs = ["> Processing hook variations...", "> Testing conversion rates...", "> Finalizing video assembly..."];
+                    const term = document.getElementById('term');
+                    const steps = [
+                        "> Parsing brand colors and typography...",
+                        "> Auto-generating high-converting slides...",
+                        "> Exporting multi-format video layout..."
+                    ];
                     let i = 0;
-                    setInterval(() => {{ if(i < logs.length) {{ term.innerHTML += '<br>' + logs[i]; i++; }} }}, 2000);
+                    setInterval(() => {{
+                        if (i < steps.length) {{
+                            term.innerHTML += '<br>' + steps[i];
+                            i++;
+                        }}
+                    }}, 2500);
                 </script>
             </body>
             </html>
             """
-            await page.set_content(dynamic_ui_html)
-            await page.wait_for_timeout(10000)
+            await page.set_content(fallback_html)
+            await page.wait_for_timeout(12000)
 
         await page.close()
         await context.close()
