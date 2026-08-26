@@ -7,6 +7,7 @@ import requests
 import edge_tts
 import whisper
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -35,16 +36,16 @@ def generate_storyboard_and_script():
     detailed_fallback_board = (
         "⏱️ 0s to 3s — Hook (specific, not generic)\n"
         "• Voiceover: \"I tested 47 AI hook-generators. Most of them write the exact same opening line.\"\n"
-        "• Actions performed: Screen-record scrolling through a folder/spreadsheet of AI-generated hooks, red X's stamping over duplicates.\n\n"
+        "• Actions performed: Dynamic UI loading with real-time hook analysis counters.\n\n"
         "⏱️ 3s to 7s — Pain point\n"
         "• Voiceover: \"That's why your reel gets 12 views while a stolen version gets 200k.\"\n"
-        "• Actions performed: Split-screen — left side showing low views analytics; right side showing viral duplicate version.\n\n"
+        "• Actions performed: Comparison analytics dashboard showing low vs viral reach.\n\n"
         "⏱️ 7s to 12s — The fix, shown not told\n"
         "• Voiceover: \"Here's the one prompt that actually forces a unique angle.\"\n"
-        "• Actions performed: Quick screen-record typing prompt into ChatGPT, generating unique hook output.\n\n"
+        "• Actions performed: Live terminal typing sequence rendering high-converting prompt.\n\n"
         "⏱️ 12s to 15s — CTA\n"
         "• Voiceover: \"Save this before your next script.\"\n"
-        "• Actions performed: Tap save icon, bold text overlay: 'THE PROMPT' with link-in-bio callout."
+        "• Actions performed: Callout card pulse with link-in-bio prompt overlay."
     )
 
     fallback_vo = (
@@ -215,7 +216,7 @@ def generate_subtitles(audio_path, srt_path):
             caption_idx += 1
 
 async def record_interactive_demo(target_url, output_dir):
-    """Guarantees anti-detection browser session with dark UI fallback rendering."""
+    """Uses stealth patches to attempt live site capture, falling back gracefully if blocked."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -236,57 +237,71 @@ async def record_interactive_demo(target_url, output_dir):
         )
         
         page = await context.new_page()
-        print(f"[Playwright] Navigating to target site: {target_url}")
+        await stealth_async(page)
+        
+        print(f"[Playwright Stealth] Attempting live recording for: {target_url}")
         
         try:
-            await page.goto(target_url, wait_until="networkidle", timeout=30000)
+            response = await page.goto(target_url, wait_until="networkidle", timeout=20000)
+            
+            # Check if Cloudflare block page was returned
+            if response and response.status in [403, 503]:
+                raise RuntimeError(f"Cloudflare returned status code {response.status}")
+                
             await page.wait_for_timeout(2000)
             
-            # Dismiss cookie popups if present
-            try:
-                cookie_btn = page.locator("button:has-text('Accept'), button:has-text('Allow'), button:has-text('Agree')").first
-                if await cookie_btn.is_visible():
-                    await cookie_btn.click()
-            except Exception:
-                pass
-
-            # Perform page interactions
+            # Interact with live page
             for _ in range(4):
                 await page.mouse.wheel(0, 300)
                 await page.wait_for_timeout(600)
 
-            try:
-                text_box = page.locator("textarea, input[type='text']").first
-                if await text_box.is_visible():
-                    await text_box.click()
-                    await text_box.type("I tested 47 AI hook generators...", delay=70)
-                    await page.wait_for_timeout(1000)
-            except Exception:
-                pass
-
-            for _ in range(3):
-                await page.mouse.wheel(0, 350)
-                await page.wait_for_timeout(600)
-
         except Exception as e:
-            print(f"[Playwright Navigation Warning]: {e}. Injecting styled workspace UI...")
-            # Fallback styled UI if site blocks headless browser
-            ui_html = f"""
+            print(f"[Playwright Stealth Warning]: {e}. Fallback UI activated...")
+            
+            dynamic_ui_html = f"""
+            <!DOCTYPE html>
             <html>
-            <body style="margin:0; background:#0f172a; color:#f8fafc; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh;">
-                <div style="width:85%; background:#1e293b; border-radius:16px; padding:32px; box-shadow:0 10px 25px rgba(0,0,0,0.5); border:1px solid #334155;">
-                    <h2 style="color:#38bdf8; margin-top:0;">⚡ AI Reel Studio</h2>
-                    <p style="color:#94a3b8; font-size:18px;">Target: {target_url}</p>
-                    <div style="background:#090d16; padding:20px; border-radius:10px; font-family:monospace; color:#4ade80; margin-top:20px;">
-                        > Processing hook variations...<br>
-                        > Synthesizing voiceover audio track...<br>
-                        > Compiling timed overlay subtitles...
-                    </div>
+            <head>
+                <style>
+                    * {{ box-sizing: border-box; }}
+                    body {{
+                        margin: 0; padding: 0;
+                        width: 1080px; height: 1920px;
+                        background: linear-gradient(135deg, #090d16 0%, #111827 50%, #0f172a 100%);
+                        color: #f8fafc; font-family: sans-serif;
+                        display: flex; flex-direction: column;
+                        align-items: center; justify-content: center;
+                    }}
+                    .card {{
+                        width: 880px; background: rgba(30, 41, 59, 0.7);
+                        border: 2px solid rgba(255, 255, 255, 0.1);
+                        border-radius: 24px; padding: 48px;
+                    }}
+                    .title {{ font-size: 42px; font-weight: 800; color: #60a5fa; }}
+                    .console {{
+                        background: #020617; border-radius: 16px;
+                        padding: 28px; font-family: monospace; font-size: 24px;
+                        color: #38bdf8; margin-top: 32px; min-height: 180px;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div style="background:#3b82f6; display:inline-block; padding:8px 18px; border-radius:20px; font-weight:bold;">PLUTUS LAB AI</div>
+                    <div class="title">Hook Engine Analysis</div>
+                    <p style="color:#94a3b8; font-size:20px;">Target: {target_url}</p>
+                    <div class="console" id="terminal">> Initializing workflow automation...</div>
                 </div>
+                <script>
+                    const term = document.getElementById('terminal');
+                    const logs = ["> Processing hook variations...", "> Testing conversion rates...", "> Finalizing video assembly..."];
+                    let i = 0;
+                    setInterval(() => {{ if(i < logs.length) {{ term.innerHTML += '<br>' + logs[i]; i++; }} }}, 2000);
+                </script>
             </body>
             </html>
             """
-            await page.set_content(ui_html)
+            await page.set_content(dynamic_ui_html)
             await page.wait_for_timeout(10000)
 
         await page.close()
