@@ -17,22 +17,26 @@ def generate_script():
         "Content-Type": "application/json"
     }
     
+    # Highly aggressive hook refined for Claude Sonnet 5
     prompt = (
-        "Write a punchy, viral 15-second script for an Instagram Reel promoting an AI tool. "
-        "Return ONLY the plain spoken voiceover script text with no stage directions, quotes, or formatting."
+        "You are an elite short-form video copywriter. Write an intense, viral 15-second Instagram Reel script "
+        "testing an AI tool. Focus on solving a massive pain point immediately in the first 2 seconds (the hook). "
+        "Keep it punchy, fast, and natural. Return ONLY the spoken voiceover script string with zero stage directions, "
+        "quotes, or formatting."
     )
 
     models_to_try = [
-        "openrouter/auto",
         "anthropic/claude-sonnet-5",
-        "anthropic/claude-3.5-sonnet"
+        "anthropic/claude-3.5-sonnet",
+        "openrouter/auto"
     ]
 
     for model_slug in models_to_try:
         print(f"Attempting script generation with model: {model_slug}...")
         payload = {
             "model": model_slug,
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 150
         }
 
         try:
@@ -44,11 +48,11 @@ def generate_script():
                 print(f"Successfully generated script using {model_slug}!")
                 return script_text
             else:
-                print(f"Model {model_slug} returned non-standard response: {data}")
+                print(f"Model {model_slug} returned non-standard payload: {data}")
         except Exception as e:
             print(f"Request failed for model {model_slug}: {e}")
 
-    raise KeyError("All OpenRouter model endpoints failed. Check API key or credits.")
+    raise KeyError("All OpenRouter model endpoints failed.")
 
 async def generate_voiceover(text, output_path):
     voices = ["en-US-ChristopherNeural", "en-US-GuyNeural", "en-US-AriaNeural"]
@@ -60,7 +64,7 @@ async def generate_voiceover(text, output_path):
             print(f"Voiceover successfully rendered with {voice}!")
             return
         except Exception as e:
-            print(f"Voice {voice} failed: {e}. Retrying with next voice...")
+            print(f"Voice {voice} failed: {e}. Retrying...")
             await asyncio.sleep(2)
             
     raise RuntimeError("All edge-tts voice endpoints failed.")
@@ -73,7 +77,7 @@ def format_timestamp(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 def generate_subtitles(audio_path, srt_path):
-    print("[Whisper] Loading model and generating captions...")
+    print("[Whisper] Generating auto-captions...")
     model = whisper.load_model("tiny")
     result = model.transcribe(audio_path)
     
@@ -81,12 +85,11 @@ def generate_subtitles(audio_path, srt_path):
         for i, segment in enumerate(result["segments"], start=1):
             start = format_timestamp(segment["start"])
             end = format_timestamp(segment["end"])
-            text = segment["text"].strip()
+            text = segment["text"].strip().upper()  # Uppercase for punchy viral captions
             f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
-            
-    print(f"[Whisper] Subtitles generated at {srt_path}")
 
-async def record_screen(target_url, output_dir):
+async def record_interactive_screen(target_url, output_dir):
+    """Executes dynamic user interaction (scrolling, hover, clicks) to avoid static screens."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
@@ -97,42 +100,74 @@ async def record_screen(target_url, output_dir):
         page = await context.new_page()
         print(f"Navigating to {target_url}...")
         await page.goto(target_url, wait_until="networkidle")
-        await page.wait_for_timeout(15000)  # Record 15 seconds
+        
+        # 1. Smooth scroll down landing hero section
+        print("Executing interaction sequence: Smooth scrolling...")
+        for _ in range(5):
+            await page.mouse.wheel(0, 300)
+            await page.wait_for_timeout(600)
+            
+        # 2. Hover over primary Call to Action (CTA) button
+        try:
+            cta_button = page.locator("a:has-text('Create Carousel'), button:has-text('Create Carousel'), a[href*='app']").first
+            if await cta_button.is_visible():
+                print("Hovering over CTA button...")
+                await cta_button.hover()
+                await page.wait_for_timeout(1000)
+        except Exception as e:
+            print(f"CTA locator bypass: {e}")
+
+        # 3. Scroll deeper to show carousel examples
+        for _ in range(6):
+            await page.mouse.wheel(0, 450)
+            await page.wait_for_timeout(500)
+            
+        # 4. Scroll back to hero header fast
+        await page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'})")
+        await page.wait_for_timeout(1500)
+
         await context.close()
         await browser.close()
 
-def assemble_final_reel(raw_video_path, audio_path, srt_path, output_path):
-    print("[FFmpeg] Merging video, audio, and burning subtitles...")
+def assemble_dynamic_reel(raw_video_path, audio_path, srt_path, output_path):
+    print("[FFmpeg] Applying keyframed zoom/pan animation and burning dynamic captions...")
     
-    # FFmpeg command to combine raw screen capture, voiceover audio, and burned subtitles centered on screen
+    # FFmpeg filter pipeline:
+    # 1. Dynamic scale/zoompan filter creates subtle camera motion (fast-paced tool view).
+    # 2. Burn bold, centered SRT subtitles.
+    filter_complex = (
+        "zoompan=z='min(zoom+0.0015,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=375:s=1080x1920,"
+        f"subtitles={srt_path}:force_style='FontSize=22,FontName=Impact,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2'"
+    )
+
     command = [
         "ffmpeg", "-y",
         "-i", raw_video_path,
         "-i", audio_path,
-        "-vf", f"subtitles={srt_path}:force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Alignment=2'",
+        "-vf", filter_complex,
         "-c:v", "libx264",
+        "-preset", "fast",
         "-c:a", "aac",
         "-shortest",
         output_path
     ]
     
     subprocess.run(command, check=True)
-    print(f"[FFmpeg] Final Reel compiled successfully: {output_path}")
+    print(f"[FFmpeg] Dynamic Reel compiled cleanly: {output_path}")
 
 async def main():
     os.makedirs("output", exist_ok=True)
     tool_url = os.getenv("TOOL_URL", "https://aicarousels.com")
 
-    print("[1/5] Recording target website screen...")
-    await record_screen(tool_url, "output")
+    print("[1/5] Recording interactive screen demo (scrolling + actions)...")
+    await record_interactive_screen(tool_url, "output")
 
-    # Locate raw webm/mp4 generated by Playwright
     raw_files = [os.path.join("output", f) for f in os.listdir("output") if f.endswith('.webm') or f.endswith('.mp4')]
     if not raw_files:
-        raise FileNotFoundError("Playwright failed to produce a screen recording file.")
+        raise FileNotFoundError("Playwright failed to capture interactive recording.")
     raw_video = raw_files[0]
 
-    print("[2/5] Generating script via AI...")
+    print("[2/5] Generating viral script via Claude Sonnet 5...")
     script_text = generate_script()
     print(f"Generated Script:\n\"{script_text}\"")
 
@@ -140,15 +175,15 @@ async def main():
     audio_file = "output/voice.mp3"
     await generate_voiceover(script_text, audio_file)
 
-    print("[4/5] Transcribing audio to SRT via OpenAI Whisper...")
+    print("[4/5] Transcribing audio with OpenAI Whisper...")
     srt_file = "output/subtitles.srt"
     generate_subtitles(audio_file, srt_file)
 
-    print("[5/5] Assembling final dynamic video...")
+    print("[5/5] Assembling final Reel with FFmpeg keyframed animations...")
     final_video = "output/final_reel.mp4"
-    assemble_final_reel(raw_video, audio_file, srt_file, final_video)
+    assemble_dynamic_reel(raw_video, audio_file, srt_file, final_video)
 
-    print("Pipeline completed cleanly! Finished reel stored at output/final_reel.mp4")
+    print("Pipeline finished successfully! Output stored at output/final_reel.mp4")
 
 if __name__ == "__main__":
     asyncio.run(main())
