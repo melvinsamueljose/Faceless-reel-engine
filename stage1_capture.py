@@ -1,11 +1,7 @@
 import os
-import sys
-import json
 import re
-import math
-import asyncio
+import json
 import requests
-from playwright.async_api import async_playwright
 
 def clean_token(token_str):
     token = re.sub(r'[\[\]\'"\s]', '', str(token_str))
@@ -13,234 +9,88 @@ def clean_token(token_str):
         token = token.split("bot")[-1]
     return token
 
-def get_ai_script(target_url):
-    custom_hook = os.getenv("CUSTOM_HOOK", "").strip()
-    custom_voiceover = os.getenv("CUSTOM_VOICEOVER", "").strip()
+def fetch_telegram_input():
+    bot_token = clean_token(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+    url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+    
+    resp = requests.get(url).json()
+    if not resp.get("ok"):
+        raise RuntimeError("Failed to fetch Telegram updates.")
 
-    if custom_hook and custom_voiceover:
-        print("[SCRIPT ENGINE] Using manually provided custom Hook and Voiceover.")
-        return {"hook": custom_hook, "voiceover": custom_voiceover}
+    latest_video_id = None
+    user_caption = ""
 
-    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    ai_instructions = os.getenv("AI_PROMPT_INSTRUCTIONS", "Create an engaging 10-second Reel script.").strip()
-    domain = target_url.replace("https://", "").replace("http://", "").split("/")[0]
+    # Search updates backwards for the last uploaded media
+    for result in reversed(resp.get("result", [])):
+        msg = result.get("message", {})
+        caption = msg.get("caption", "") or msg.get("text", "")
+        
+        if "/create_reel" in caption or "HOOK:" in caption:
+            user_caption = caption
+            if "video" in msg:
+                latest_video_id = msg["video"]["file_id"]
+                break
+            elif "document" in msg and msg["document"]["mime_type"].startswith("video/"):
+                latest_video_id = msg["document"]["file_id"]
+                break
 
-    if not api_key:
-        print("[AI SCRIPT] No OPENROUTER_API_KEY found, using standard fallback.")
-        return {
-            "hook": custom_hook if custom_hook else "STOP MAKING CAROUSELS MANUALLY!",
-            "voiceover": custom_voiceover if custom_voiceover else f"If you are building digital content, {domain} automates your workflow instantly."
-        }
+    # Default fallbacks if no new media attached
+    hook = "INSANE AI TOOL FOR CREATORS!"
+    voiceover = "Check out this AI tool to automate your digital content workflow."
+    caption_style = "default_white"
+    edit_instructions = "Full clip display."
 
-    prompt = (
-        f"{ai_instructions}\n"
-        f"Target URL: {target_url}\n"
-        f"Return ONLY a JSON object with keys:\n"
-        f"1. 'hook': A short 4-6 word punchy uppercase text overlay.\n"
-        f"2. 'voiceover': A concise 25-30 word script explaining what the tool does."
-    )
+    if user_caption:
+        for line in user_caption.split("\n"):
+            if line.startswith("HOOK:"):
+                hook = line.replace("HOOK:", "").strip()
+            elif line.startswith("VOICEOVER:"):
+                voiceover = line.replace("VOICEOVER:", "").strip()
+            elif line.startswith("CAPTION_STYLE:"):
+                caption_style = line.replace("CAPTION_STYLE:", "").strip()
 
-    try:
-        response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            data=json.dumps({"model": "google/gemini-2.0-flash-001", "messages": [{"role": "user", "content": prompt}]}),
-            timeout=15
-        )
-        data = response.json()
-        if "choices" in data and len(data["choices"]) > 0:
-            raw_text = data['choices'][0]['message']['content'].strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text.replace("```json", "").replace("```", "").strip()
-            res_json = json.loads(raw_text)
-            if custom_hook: res_json["hook"] = custom_hook
-            if custom_voiceover: res_json["voiceover"] = custom_voiceover
-            return res_json
-        else:
-            raise KeyError(f"OpenRouter missing choices: {data}")
-    except Exception as e:
-        print(f"[AI SCRIPT ERROR] {e}. Using fallback values.")
-        return {
-            "hook": custom_hook if custom_hook else "STOP MAKING CAROUSELS MANUALLY!",
-            "voiceover": custom_voiceover if custom_voiceover else f"If you are building digital content, {domain} automates your workflow instantly."
-        }
+        if "PROMPT:" in user_caption:
+            edit_instructions = user_caption.split("PROMPT:")[-1].strip()
 
-async def inject_visual_cursor(page):
-    cursor_script = """
-    () => {
-        const cursor = document.createElement('div');
-        cursor.id = 'playwright-visual-cursor';
-        cursor.style.position = 'fixed';
-        cursor.style.top = '0px';
-        cursor.style.left = '0px';
-        cursor.style.width = '20px';
-        cursor.style.height = '20px';
-        cursor.style.border = '2px solid white';
-        cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.8)';
-        cursor.style.borderRadius = '50%';
-        cursor.style.pointerEvents = 'none';
-        cursor.style.zIndex = '99999999';
-        cursor.style.transition = 'transform 0.15s ease, background-color 0.15s ease';
-        cursor.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
-        document.body.appendChild(cursor);
-
-        window.addEventListener('mousemove', e => {
-            cursor.style.left = e.clientX - 10 + 'px';
-            cursor.style.top = e.clientY - 10 + 'px';
-        });
-        window.addEventListener('mousedown', () => {
-            cursor.style.transform = 'scale(0.7)';
-            cursor.style.backgroundColor = 'rgba(0, 255, 150, 0.9)';
-        });
-        window.addEventListener('mouseup', () => {
-            cursor.style.transform = 'scale(1)';
-            cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.8)';
-        });
+    script_data = {
+        "hook": hook,
+        "voiceover": voiceover,
+        "caption_style": caption_style,
+        "instructions": edit_instructions
     }
-    """
-    await page.evaluate(cursor_script)
 
-async def human_move_mouse(page, start_x, start_y, end_x, end_y, steps=40):
-    for i in range(1, steps + 1):
-        t = i / steps
-        ease_t = 2 * t * t if t < 0.5 else 1 - math.pow(-2 * t + 2, 2) / 2
-        curr_x = start_x + (end_x - start_x) * ease_t
-        curr_y = start_y + (end_y - start_y) * ease_t
-        await page.mouse.move(curr_x, curr_y)
-        await asyncio.sleep(0.012)
-
-async def human_scroll(page, scroll_amount, steps=30):
-    per_step = scroll_amount / steps
-    for _ in range(steps):
-        await page.mouse.wheel(0, per_step)
-        await asyncio.sleep(0.02)
-
-async def capture_screen(target_url, output_path="raw_desktop.webm"):
-    post_click_wait = float(os.getenv("POST_CLICK_WAIT", "14.0"))
-
-    print(f"[RECORDER] Launching full workflow recorder for {target_url}...")
-    
-    async with async_playwright() as p:
-        browser = await p.firefox.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"]
-        )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
-            record_video_dir="temp_raw",
-            record_video_size={"width": 1920, "height": 1080}
-        )
-        page = await context.new_page()
-        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        try:
-            await page.goto(target_url, wait_until="networkidle", timeout=60000)
-            await asyncio.sleep(2.5)
-            await inject_visual_cursor(page)
-            
-            curr_x, curr_y = 300, 200
-            await page.mouse.move(curr_x, curr_y)
-            await asyncio.sleep(1.0)
-
-            # Step 1: Click Main CTA / Enter App
-            print("[WORKFLOW 1/4] Navigating main CTA...")
-            main_cta = page.locator("a:has-text('Try'), button:has-text('Create'), a[href*='app']").first
-            if await main_cta.is_visible():
-                box = await main_cta.bounding_box()
-                if box:
-                    target_x = box["x"] + box["width"] / 2
-                    target_y = box["y"] + box["height"] / 2
-                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=35)
-                    await asyncio.sleep(0.4)
-                    await page.mouse.down()
-                    await asyncio.sleep(0.12)
-                    await page.mouse.up()
-                    curr_x, curr_y = target_x, target_y
-                    await asyncio.sleep(3.0)
-
-            # Step 2: Locate Topic Input Box & Type Prompt
-            print("[WORKFLOW 2/4] Typing topic into AI generator...")
-            prompt_input = page.locator("textarea, input[placeholder*='topic'], input[placeholder*='prompt'], input[type='text']").first
-            if await prompt_input.is_visible():
-                box = await prompt_input.bounding_box()
-                if box:
-                    target_x = box["x"] + box["width"] / 2
-                    target_y = box["y"] + box["height"] / 2
-                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=35)
-                    await asyncio.sleep(0.4)
-                    await page.mouse.down()
-                    await asyncio.sleep(0.1)
-                    await page.mouse.up()
-                    
-                    curr_x, curr_y = target_x, target_y
-                    await prompt_input.type("10 AI Productivity Hacks for Creators", delay=80)
-                    await asyncio.sleep(1.0)
-
-            # Step 3: Click Generate Button
-            print("[WORKFLOW 3/4] Clicking generate button...")
-            gen_btn = page.locator("button:has-text('Generate'), button[type='submit'], button:has-text('Create Carousel')").first
-            if await gen_btn.is_visible():
-                box = await gen_btn.bounding_box()
-                if box:
-                    target_x = box["x"] + box["width"] / 2
-                    target_y = box["y"] + box["height"] / 2
-                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=30)
-                    await asyncio.sleep(0.3)
-                    await page.mouse.down()
-                    await asyncio.sleep(0.12)
-                    await page.mouse.up()
-                    curr_x, curr_y = target_x, target_y
-
-            # Step 4: Record AI Generation and Slide Rendering
-            print(f"[WORKFLOW 4/4] Recording complete carousel output for {post_click_wait} seconds...")
-            await asyncio.sleep(post_click_wait)
-
-            # Showcase smooth scroll over output
-            await human_scroll(page, 200, steps=20)
-            await asyncio.sleep(2.0)
-
-        except Exception as e:
-            print(f"[CAPTURE WARNING] {e}")
-        finally:
-            await context.close()
-            await browser.close()
-
-    raw_dir = "temp_raw"
-    videos = [os.path.join(raw_dir, f) for f in os.listdir(raw_dir) if f.endswith(".webm")]
-    if videos:
-        os.rename(max(videos, key=os.path.getctime), output_path)
-        print(f"[RECORDER] Full generation recording completed: {output_path}")
-
-def notify_telegram(video_path, script_data):
-    raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    bot_token = clean_token(raw_token)
-    chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
-
-    caption = (
-        "📹 *Full AI Carousel Generation Captured*\n\n"
-        f"📌 *Hook:* {script_data['hook']}\n"
-        f"🎙️ *Voiceover:* {script_data['voiceover']}\n\n"
-        "Ready for Stage 2 render!"
-    )
-
-    api_endpoint = "https://" + "api.telegram.org/bot" + bot_token + "/sendVideo"
-    with open(video_path, "rb") as vf:
-        requests.post(
-            api_endpoint,
-            data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"},
-            files={"video": vf}
-        )
-
-async def main():
-    url = os.getenv("TARGET_URL", "[https://aicarousels.com](https://aicarousels.com)")
-    script = get_ai_script(url)
-    
     with open("script.json", "w") as f:
-        json.dump(script, f)
+        json.dump(script_data, f, indent=2)
 
-    await capture_screen(url)
-    notify_telegram("raw_desktop.webm", script)
+    if latest_video_id:
+        file_info = requests.get(f"https://api.telegram.org/bot{bot_token}/getFile?file_id={latest_video_id}").json()
+        file_path = file_info["result"]["file_path"]
+        download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
+        
+        print("[STAGE 1] Downloading raw manual recording from Telegram...")
+        res = requests.get(download_url)
+        with open("raw_desktop.webm", "wb") as f:
+            f.write(res.content)
+        print("[STAGE 1] Raw media saved successfully.")
+
+def notify_received():
+    bot_token = clean_token(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+    chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
+    
+    with open("script.json", "r") as f:
+        data = json.load(f)
+
+    msg = (
+        "⚙️ *Raw Media & Edit Instructions Received*\n\n"
+        f"📌 *Hook:* {data['hook']}\n"
+        f"🎙️ *Voiceover:* {data['voiceover']}\n"
+        f"🎨 *Style:* {data['caption_style']}\n\n"
+        "⚡ *Processing Stage 2 HyperFrames render now...*"
+    )
+    
+    api_endpoint = "https://api.telegram.org/bot" + bot_token + "/sendMessage"
+    requests.post(api_endpoint, data={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    fetch_telegram_input()
+    notify_received()
