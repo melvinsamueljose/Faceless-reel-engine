@@ -43,7 +43,7 @@ jobs:
         if: ${{ github.event.inputs.stage == 'capture' }}
         env:
           TARGET_URL: ${{ github.event.inputs.target_url }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python stage1_capture.py
