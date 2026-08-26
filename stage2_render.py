@@ -14,7 +14,7 @@ def clean_token(token_str):
     return token
 
 def build_synced_audio(vo_timeline, output_final_audio="final_synced_vo.mp3"):
-    print("[STAGE 2] Assembling synchronized voiceover track...")
+    print("[STAGE 2] Generating Edge-TTS clips and applying timestamp delays...")
     
     inputs = []
     filter_complex_parts = []
@@ -24,7 +24,6 @@ def build_synced_audio(vo_timeline, output_final_audio="final_synced_vo.mp3"):
         text = item["text"]
         part_filename = f"vo_part_{i}.mp3"
         
-        # Generate segment TTS
         tts_cmd = f'edge-tts --text "{text}" --write-media {part_filename} --voice en-US-ChristopherNeural'
         subprocess.run(tts_cmd, shell=True, check=True)
         
@@ -38,26 +37,29 @@ def build_synced_audio(vo_timeline, output_final_audio="final_synced_vo.mp3"):
     
     try:
         subprocess.run(ffmpeg_cmd, check=True)
-        print(f"[STAGE 2] Synced audio generated successfully: {output_final_audio}")
+        print(f"[STAGE 2] Synced audio generated: {output_final_audio}")
     except subprocess.CalledProcessError as e:
-        print(f"[STAGE 2 ERROR] Audio merging failed: {e}")
-        # Fallback to single primary audio segment if filter graph fails
+        print(f"[STAGE 2 WARNING] Multi-clip audio mix failed ({e}). Falling back to primary segment.")
         if os.path.exists("vo_part_0.mp3"):
             os.rename("vo_part_0.mp3", output_final_audio)
 
 def render_hyperframes():
-    print("[STAGE 2] Executing HyperFrames HTML-to-Video Engine...")
+    print("[STAGE 2] Executing HyperFrames layout engine...")
     
-    # Check if hyperframes executable exists, run build fallback if rendering natively
     cmd = "hyperframes render template.html --audio final_synced_vo.mp3 -o final_reel.mp4"
     try:
         subprocess.run(cmd, shell=True, check=True)
-        print("[STAGE 2] HyperFrames rendering complete: final_reel.mp4")
+        print("[STAGE 2] HyperFrames render completed successfully: final_reel.mp4")
     except Exception as e:
-        print(f"[STAGE 2 WARNING] HyperFrames CLI execution failed ({e}). Running fallback conversion...")
-        # Emergency FFmpeg fallback stitch if HyperFrames is missing environment dependencies
-        input_media = "raw_desktop.webm" if os.path.exists("raw_desktop.webm") else "raw_desktop.png"
-        fallback_cmd = f"ffmpeg -y -i {input_media} -i final_synced_vo.mp3 -c:v libx264 -c:a aac -shortest final_reel.mp4"
+        print(f"[STAGE 2 WARNING] HyperFrames CLI execution failed ({e}). Running multi-image FFmpeg fallback...")
+        
+        fallback_cmd = (
+            "ffmpeg -y -loop 1 -t 3 -i image_1.jpg -loop 1 -t 3 -i image_2.jpg "
+            "-loop 1 -t 4 -i image_3.jpg -loop 1 -t 4 -i image_4.jpg -loop 1 -t 3 -i image_5.jpg "
+            "-i final_synced_vo.mp3 -filter_complex "
+            "\"[0:v][1:v][2:v][3:v][4:v]concat=n=5:v=1:a=0[v]\" "
+            "-map \"[v]\" -map 5:a -c:v libx264 -pix_fmt yuv420p -shortest final_reel.mp4"
+        )
         subprocess.run(fallback_cmd, shell=True, check=True)
 
 def dispatch_to_telegram():
@@ -71,14 +73,13 @@ def dispatch_to_telegram():
 
     video_path = "final_reel.mp4"
     if not os.path.exists(video_path):
-        video_path = "raw_desktop.webm"
+        print("[STAGE 2 ERROR] Video file not found.")
+        sys.exit(1)
 
     caption = "🚀 *Your Stitched HyperFrames Reel is Ready!*"
-    
-    # Direct endpoint string format to completely prevent InvalidSchema / markdown token injection
     api_endpoint = f"https://api.telegram.org/bot{bot_token}/sendVideo"
     
-    print(f"[STAGE 2] Dispatching video standard binary post to Telegram...")
+    print(f"[STAGE 2] Uploading video binary to Telegram...")
     with open(video_path, "rb") as vf:
         resp = requests.post(
             api_endpoint,
@@ -90,7 +91,7 @@ def dispatch_to_telegram():
     if resp.status_code == 200:
         print("[STAGE 2 SUCCESS] Final video sent to Telegram successfully!")
     else:
-        print(f"[STAGE 2 ERROR] Telegram post failed with status code {resp.status_code}: {resp.text}")
+        print(f"[STAGE 2 ERROR] Telegram post failed ({resp.status_code}): {resp.text}")
 
 if __name__ == "__main__":
     if os.path.exists("script.json"):
