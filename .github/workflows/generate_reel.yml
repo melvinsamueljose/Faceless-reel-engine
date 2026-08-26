@@ -23,10 +23,18 @@ on:
         description: 'Custom AI Generation Prompt / Style'
         required: false
         default: 'Create an engaging 10-second Reel script.'
-      capture_action:
-        description: 'Capture Action (scroll, click_try, or full_page)'
-        required: true
-        default: 'click_try'
+      click_selector:
+        description: 'CSS Selector / Text to click (e.g., text=Try for free, .btn-primary)'
+        required: false
+        default: "a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started'), a.btn"
+      scroll_depth:
+        description: 'Pixels to scroll before clicking'
+        required: false
+        default: '300'
+      post_click_wait:
+        description: 'Seconds to record after click action'
+        required: false
+        default: '6.0'
 
 jobs:
   run-pipeline:
@@ -62,7 +70,9 @@ jobs:
           CUSTOM_HOOK: ${{ github.event.inputs.custom_hook }}
           CUSTOM_VOICEOVER: ${{ github.event.inputs.custom_voiceover }}
           AI_PROMPT_INSTRUCTIONS: ${{ github.event.inputs.ai_prompt_instructions }}
-          CAPTURE_ACTION: ${{ github.event.inputs.capture_action }}
+          CLICK_SELECTOR: ${{ github.event.inputs.click_selector }}
+          SCROLL_DEPTH: ${{ github.event.inputs.scroll_depth }}
+          POST_CLICK_WAIT: ${{ github.event.inputs.post_click_wait }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
