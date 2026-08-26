@@ -8,15 +8,15 @@ def send_video_to_telegram():
     video_path = os.getenv("OUTPUT_PATH", "final_reel.mp4")
 
     if not bot_token or not chat_id:
-        print("[TELEGRAM] Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secret is missing.")
+        print("[TELEGRAM] Error: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secrets.")
         sys.exit(1)
 
     if not os.path.exists(video_path):
-        print(f"[TELEGRAM] Error: Rendered video file '{video_path}' does not exist.")
+        print(f"[TELEGRAM] Error: Rendered output '{video_path}' not found.")
         sys.exit(1)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
-    print(f"[TELEGRAM] Uploading '{video_path}' to Telegram chat {chat_id}...")
+    print(f"[TELEGRAM] Delivering '{video_path}' to target Telegram chat...")
 
     with open(video_path, "rb") as video_file:
         payload = {
@@ -28,9 +28,9 @@ def send_video_to_telegram():
         response = requests.post(url, data=payload, files=files)
 
     if response.status_code == 200:
-        print("[TELEGRAM] Video delivered successfully!")
+        print("[TELEGRAM] Video sent successfully!")
     else:
-        print(f"[TELEGRAM] Failed to send video. Server response: {response.status_code} - {response.text}")
+        print(f"[TELEGRAM] Delivery failed ({response.status_code}): {response.text}")
         sys.exit(1)
 
 if __name__ == "__main__":
