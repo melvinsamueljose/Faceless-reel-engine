@@ -92,7 +92,7 @@ def notify_telegram(video_path, script_data):
         f"Ready for HyperFrames rendering!"
     )
 
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){bot_token}/sendVideo"
+    url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
     with open(video_path, "rb") as vf:
         requests.post(
             url,
