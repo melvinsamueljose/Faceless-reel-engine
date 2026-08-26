@@ -100,7 +100,7 @@ async def inject_visual_cursor(page):
     """
     await page.evaluate(cursor_script)
 
-async def human_move_mouse(page, start_x, start_y, end_x, end_y, steps=35):
+async def human_move_mouse(page, start_x, start_y, end_x, end_y, steps=40):
     for i in range(1, steps + 1):
         t = i / steps
         ease_t = 2 * t * t if t < 0.5 else 1 - math.pow(-2 * t + 2, 2) / 2
@@ -109,14 +109,18 @@ async def human_move_mouse(page, start_x, start_y, end_x, end_y, steps=35):
         await page.mouse.move(curr_x, curr_y)
         await asyncio.sleep(0.012)
 
-async def human_scroll(page, scroll_amount, steps=25):
+async def human_scroll(page, scroll_amount, steps=30):
     per_step = scroll_amount / steps
     for _ in range(steps):
         await page.mouse.wheel(0, per_step)
         await asyncio.sleep(0.02)
 
 async def capture_screen(target_url, output_path="raw_desktop.webm"):
-    print(f"[RECORDER] Launching anti-detect Playwright Firefox for {target_url}...")
+    click_selector = os.getenv("CLICK_SELECTOR", "a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started')").strip()
+    scroll_depth = float(os.getenv("SCROLL_DEPTH", "300"))
+    post_click_wait = float(os.getenv("POST_CLICK_WAIT", "6.0"))
+
+    print(f"[RECORDER] Launching controlled screen recorder for {target_url}...")
     
     async with async_playwright() as p:
         browser = await p.firefox.launch(
@@ -130,41 +134,53 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
             record_video_size={"width": 1920, "height": 1080}
         )
         page = await context.new_page()
-        
-        # Override webdriver flag
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         try:
             await page.goto(target_url, wait_until="networkidle", timeout=60000)
-            await asyncio.sleep(3)
+            await asyncio.sleep(2.5)
             await inject_visual_cursor(page)
             
-            curr_x, curr_y = 200, 200
+            # Start off-center
+            curr_x, curr_y = 250, 200
             await page.mouse.move(curr_x, curr_y)
             await asyncio.sleep(1.0)
 
-            await human_scroll(page, 300, steps=20)
-            await asyncio.sleep(0.8)
+            # Step 1: Controlled smooth scroll
+            if scroll_depth > 0:
+                print(f"[ACTION] Smooth scrolling down by {scroll_depth}px...")
+                await human_scroll(page, scroll_depth, steps=30)
+                await asyncio.sleep(1.0)
 
-            btn = page.locator("a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started'), a.btn").first
-            
+            # Step 2: Target interaction
+            btn = page.locator(click_selector).first
             if await btn.is_visible():
                 box = await btn.bounding_box()
                 if box:
                     target_x = box["x"] + box["width"] / 2
                     target_y = box["y"] + box["height"] / 2
                     
-                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=40)
-                    await asyncio.sleep(0.4)
+                    print(f"[ACTION] Keyframing mouse movement to selector: {click_selector}")
+                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=45)
+                    await asyncio.sleep(0.6) # Hover pause for human feel
                     
+                    print("[ACTION] Clicking target...")
                     await page.mouse.down()
-                    await asyncio.sleep(0.12)
+                    await asyncio.sleep(0.15)
                     await page.mouse.up()
                     
-                    await asyncio.sleep(4.0)
+                    curr_x, curr_y = target_x, target_y
             else:
-                await human_scroll(page, 500, steps=30)
-                await asyncio.sleep(2.0)
+                print(f"[ACTION] Selector '{click_selector}' not visible, executing secondary scroll.")
+                await human_scroll(page, 400, steps=25)
+
+            # Step 3: Post-click recording wait time
+            print(f"[ACTION] Holding record state for {post_click_wait}s to capture loaded UI...")
+            await asyncio.sleep(post_click_wait)
+
+            # Step 4: Final subtle scroll showcase
+            await human_scroll(page, 250, steps=20)
+            await asyncio.sleep(2.0)
 
         except Exception as e:
             print(f"[CAPTURE WARNING] {e}")
@@ -176,7 +192,7 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
     videos = [os.path.join(raw_dir, f) for f in os.listdir(raw_dir) if f.endswith(".webm")]
     if videos:
         os.rename(max(videos, key=os.path.getctime), output_path)
-        print(f"[RECORDER] Smooth desktop footage saved: {output_path}")
+        print(f"[RECORDER] High-precision desktop footage saved: {output_path}")
 
 def notify_telegram(video_path, script_data):
     raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -184,14 +200,13 @@ def notify_telegram(video_path, script_data):
     chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
 
     caption = (
-        "📹 *Precision Anti-Detect Desktop Capture Complete*\n\n"
+        "📹 *Controlled Precision Screen Recording Complete*\n\n"
         f"📌 *Hook:* {script_data['hook']}\n"
         f"🎙️ *Voiceover:* {script_data['voiceover']}\n\n"
         "Ready for Stage 2 render!"
     )
 
-    api_endpoint = "https://api.telegram.org/bot" + bot_token + "/sendVideo"
-    
+    api_endpoint = "[https://api.telegram.org/bot](https://api.telegram.org/bot)" + bot_token + "/sendVideo"
     with open(video_path, "rb") as vf:
         requests.post(
             api_endpoint,
