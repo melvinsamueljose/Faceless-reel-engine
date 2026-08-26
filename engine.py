@@ -14,19 +14,15 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def clean_voiceover_text(raw_text):
     """Extracts strictly the spoken voiceover script, stripping all storyboard markers."""
-    # 1. Try extracting text inside the explicit Spoken Voiceover section
     script_match = re.search(r'🎙️\s*\*?Spoken Voiceover Script\*?:?\s*[\r\n]+["“]?([^"”]+)["”]?', raw_text, re.DOTALL | re.IGNORECASE)
     if script_match and len(script_match.group(1).strip()) > 10:
         clean = script_match.group(1).strip()
-        # Remove any lingering trailing quotes or markdown
         return re.sub(r'^["“]|["”]$', '', clean).strip()
 
-    # 2. Collect lines following "Voiceover:" patterns
     vo_matches = re.findall(r'•?\s*Voiceover:\s*["“]?([^"”\n]+)["”]?', raw_text, re.IGNORECASE)
     if vo_matches:
         return " ".join([v.strip() for v in vo_matches if v.strip()])
 
-    # 3. Fallback: Strip metadata lines line-by-line
     cleaned_lines = []
     for line in raw_text.splitlines():
         line = line.strip()
@@ -247,94 +243,51 @@ async def record_interactive_demo(target_url, output_dir):
         
         page = await context.new_page()
         await Stealth().apply_stealth_async(page)
+        await page.bring_to_front()
         
         print(f"[Playwright Stealth] Attempting live recording for: {target_url}")
         
         try:
-            response = await page.goto(target_url, wait_until="networkidle", timeout=15000)
+            response = await page.goto(target_url, wait_until="load", timeout=12000)
             
             if response and response.status in [403, 503]:
-                raise RuntimeError(f"Cloudflare returned status code {response.status}")
+                raise RuntimeError(f"Cloudflare status {response.status}")
                 
             await page.wait_for_timeout(2000)
-            
-            for _ in range(4):
-                await page.mouse.wheel(0, 300)
-                await page.wait_for_timeout(800)
+            for _ in range(5):
+                await page.mouse.wheel(0, 400)
+                await page.wait_for_timeout(1500)
 
         except Exception as e:
-            print(f"[Playwright Stealth Warning]: {e}. Activating visual fallback UI...")
+            print(f"[Playwright Fallback Activated]: {e}")
             
             fallback_html = f"""
             <!DOCTYPE html>
-            <html style="background-color: #0b0f19; height: 100vh;">
+            <html style="background-color: #0d1117; width: 1080px; height: 1920px;">
             <head>
                 <meta charset="UTF-8">
-                <style>
-                    html, body {{
-                        margin: 0; padding: 0;
-                        width: 1080px; height: 1920px;
-                        background: #0b0f19 !important;
-                        color: #ffffff !important;
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        display: flex; flex-direction: column;
-                        align-items: center; justify-content: center;
-                    }}
-                    .container {{
-                        width: 900px;
-                        background: #161f33;
-                        border: 2px solid #2a3859;
-                        border-radius: 32px;
-                        padding: 60px;
-                        box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-                    }}
-                    .badge {{
-                        background: #3b82f6;
-                        color: #ffffff;
-                        padding: 12px 24px;
-                        border-radius: 20px;
-                        font-weight: 800;
-                        font-size: 24px;
-                        display: inline-block;
-                        margin-bottom: 24px;
-                    }}
-                    .title {{
-                        font-size: 56px;
-                        font-weight: 900;
-                        color: #60a5fa;
-                        margin-bottom: 16px;
-                    }}
-                    .url {{
-                        color: #94a3b8;
-                        font-size: 28px;
-                        margin-bottom: 40px;
-                    }}
-                    .terminal {{
-                        background: #030712;
-                        border: 1px solid #1f2937;
-                        border-radius: 20px;
-                        padding: 40px;
-                        font-family: monospace;
-                        font-size: 32px;
-                        color: #38bdf8;
-                        min-height: 250px;
-                        line-height: 1.6;
-                    }}
-                </style>
             </head>
-            <body>
-                <div class="container">
-                    <div class="badge">PLUTUS LAB AUTOMATION</div>
-                    <div class="title">Visual Engine Active</div>
-                    <div class="url">Processing: {target_url}</div>
-                    <div class="terminal" id="term">> Analyzing layout parameters...</div>
+            <body style="margin: 0; padding: 0; width: 1080px; height: 1920px; background-color: #0d1117; font-family: sans-serif; display: flex; align-items: center; justify-content: center;">
+                <div style="width: 850px; background: #161b22; border: 3px solid #30363d; border-radius: 36px; padding: 60px; box-shadow: 0 30px 60px rgba(0,0,0,0.8);">
+                    <div style="background: #2563eb; color: #ffffff; padding: 12px 28px; border-radius: 20px; font-weight: 800; font-size: 26px; display: inline-block; margin-bottom: 30px;">
+                        PLUTUS LAB AUTOMATION
+                    </div>
+                    <div style="font-size: 58px; font-weight: 900; color: #60a5fa; margin-bottom: 20px;">
+                        Visual Engine Active
+                    </div>
+                    <div style="color: #8b949e; font-size: 30px; margin-bottom: 40px;">
+                        Processing: {target_url}
+                    </div>
+                    <div id="term" style="background: #010409; border: 2px solid #21262d; border-radius: 24px; padding: 40px; font-family: monospace; font-size: 30px; color: #38bdf8; min-height: 300px; line-height: 1.8;">
+                        > Analyzing page elements...
+                    </div>
                 </div>
                 <script>
                     const term = document.getElementById('term');
                     const steps = [
-                        "> Parsing brand colors and typography...",
-                        "> Auto-generating high-converting slides...",
-                        "> Exporting multi-format video layout..."
+                        "> Extracting brand guidelines...",
+                        "> Formatting automated slides...",
+                        "> Compiling 1080x1920 sequence..."
                     ];
                     let i = 0;
                     setInterval(() => {{
@@ -348,8 +301,11 @@ async def record_interactive_demo(target_url, output_dir):
             </html>
             """
             await page.set_content(fallback_html)
-            await page.wait_for_timeout(12000)
+            # Mandatory 15-second recording window for screen capture engine
+            await page.wait_for_timeout(15000)
 
+        # Force video buffer write before context closing
+        await page.wait_for_timeout(1000)
         await page.close()
         await context.close()
         await browser.close()
