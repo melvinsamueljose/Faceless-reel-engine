@@ -2,49 +2,58 @@ name: Generate Faceless Reel
 
 on:
   workflow_dispatch:
+    inputs:
+      tool_url:
+        description: 'Target Website URL to Record'
+        required: false
+        default: 'https://aicarousels.com'
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 12 * * *'
 
 jobs:
-  build-and-render:
+  generate-and-render:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install System Dependencies (FFmpeg)
+      - name: Install System Dependencies & FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fonts-dejavu
 
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests edge-tts openai-whisper playwright
+          python -m whisper --help > /dev/null
 
-      - name: Install Playwright & Browsers
+      - name: Install Playwright Browsers & Dependencies
         run: |
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
+          npx playwright install-deps chromium
 
-      - name: Execute Autonomous Pipeline with Telegram Authorization
+      - name: Execute Reel Generation Engine
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TOOL_URL: "https://aicarousels.com"
+          TOOL_URL: ${{ github.event.inputs.tool_url || 'https://aicarousels.com' }}
         run: |
           python engine.py
 
-      - name: Send Video to Telegram
+      - name: Send Rendered Video to Telegram
+        if: success()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python send_telegram.py
+          curl -v -F chat_id="${TELEGRAM_CHAT_ID}" \
+               -F video=@"output/final_reel.mp4" \
+               -F caption="🎬 Reel Output Ready!" \
+               "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo"
