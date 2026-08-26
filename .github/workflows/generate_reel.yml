@@ -2,8 +2,11 @@ name: Generate and Render Faceless Reel
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 12 * * *' # Runs daily at 12:00 UTC
+    inputs:
+      tool_url:
+        description: 'URL of the target site/SaaS to process'
+        required: true
+        default: 'https://aicarousels.com'
 
 jobs:
   generate-and-render:
@@ -30,6 +33,7 @@ jobs:
 
       - name: Execute Reel Generation Engine
         env:
+          TOOL_URL: ${{ github.event.inputs.tool_url }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
