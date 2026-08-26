@@ -1,7 +1,7 @@
 import os
 import sys
 import asyncio
-import requests
+from PIL import Image, ImageDraw, ImageFont
 from playwright.async_api import async_playwright
 
 try:
@@ -9,12 +9,11 @@ try:
         ColorClip,
         ImageClip,
         VideoFileClip,
-        TextClip,
         CompositeVideoClip,
         AudioFileClip
     )
 except ImportError:
-    from moviepy.video.VideoClip import ColorClip, ImageClip, TextClip
+    from moviepy.video.VideoClip import ColorClip, ImageClip
     from moviepy.video.io.VideoFileClip import VideoFileClip
     from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
     from moviepy.audio.io.AudioFileClip import AudioFileClip
@@ -22,121 +21,108 @@ except ImportError:
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
 DEFAULT_FPS = 30
+DEFAULT_DURATION = 10.0
 
-async def record_website_video(url, output_video_path="recording.webm", duration=10):
+async def capture_website_screenshot(url, output_img_path="page_preview.png"):
     """
-    Launches headless chromium via Playwright, opens target URL, and captures a video recording.
+    Launches headless Chromium with CI-safe flags and captures a full vertical viewport screenshot.
     """
-    print(f"[PLAYWRIGHT] Starting screen recording of {url}...")
+    print(f"[PLAYWRIGHT] Capturing target URL: {url}...")
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        # Configure mobile/vertical viewport for reel recording
+        # Launch flags required for GitHub Actions containerized runner
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
         context = await browser.new_context(
             viewport={"width": 1080, "height": 1920},
-            record_video_dir="recordings/",
-            record_video_size={"width": 1080, "height": 1920}
+            device_scale_factor=1
         )
         page = await context.new_page()
         try:
-            await page.goto(url, wait_until="networkidle", timeout=60000)
-            print(f"[PLAYWRIGHT] Page loaded successfully. Recording for {duration} seconds...")
-            
-            # Smooth scroll effect down the page
-            for i in range(5):
-                await page.evaluate(f"window.scrollBy(0, {400});")
-                await asyncio.sleep(duration / 5)
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            print(f"[PLAYWRIGHT] Response status: {response.status if response else 'No Response'}")
+            await asyncio.sleep(3)  # Allow asset hydration
+            await page.screenshot(path=output_img_path, full_page=False)
+            print(f"[PLAYWRIGHT] Saved viewport snapshot to {output_img_path}")
+            return output_img_path
         except Exception as e:
-            print(f"[PLAYWRIGHT ERROR] Error during browser session: {e}")
+            print(f"[PLAYWRIGHT ERROR] Capture failed: {e}")
+            return None
         finally:
             await context.close()
             await browser.close()
 
-    # Move generated webm file to expected path
-    recording_dir = "recordings"
-    if os.path.exists(recording_dir):
-        files = [os.path.join(recording_dir, f) for f in os.listdir(recording_dir) if f.endswith(".webm")]
-        if files:
-            os.rename(files[0], output_video_path)
-            print(f"[PLAYWRIGHT] Saved video recording to {output_video_path}")
-            return output_video_path
-    return None
+def create_text_image(text, width=1080, height=1920, output_img_path="text_overlay.png"):
+    """Draws centered text overlay onto a transparent PNG layer."""
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    if os.path.exists(font_path):
+        font = ImageFont.truetype(font_path, 54)
+    else:
+        font = ImageFont.load_default()
+
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    x = (width - text_w) / 2
+    y = (height - text_h) / 2
+
+    padding = 24
+    draw.rectangle(
+        [x - padding, y - padding, x + text_w + padding, y + text_h + padding],
+        fill=(0, 0, 0, 200)
+    )
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+    
+    img.save(output_img_path)
+    return output_img_path
 
 def generate_reel(
-    bg_video_path=None,
-    bg_image_path=None,
+    captured_img_path=None,
     audio_path=None,
     overlay_text="",
     output_path="final_reel.mp4"
 ):
-    print("[ENGINE] Initializing Reel Generation Pipeline...")
+    print("[ENGINE] Building video sequence...")
     clips_to_composite = []
-    total_duration = 10.0
+    total_duration = DEFAULT_DURATION
 
-    # 1. Base Audio
-    audio_clip = None
-    if audio_path and os.path.exists(audio_path):
-        try:
-            audio_clip = AudioFileClip(audio_path)
-            total_duration = audio_clip.duration
-            print(f"[ENGINE] Loaded audio track ({total_duration:.2f}s).")
-        except Exception as e:
-            print(f"[WARNING] Could not load audio: {e}")
-
-    # 2. Base Layer (Black background)
+    # 1. Base Layer (Dark Gray fallback)
     base_bg = ColorClip(
         size=(CANVAS_WIDTH, CANVAS_HEIGHT),
-        color=(0, 0, 0),
+        color=(20, 20, 20),
         duration=total_duration
     )
     clips_to_composite.append(base_bg)
 
-    # 3. Screen Recording Layer
-    if bg_video_path and os.path.exists(bg_video_path):
-        try:
-            print(f"[ENGINE] Adding screen recording layer from: {bg_video_path}")
-            video_clip = VideoFileClip(bg_video_path)
-            
-            if video_clip.duration < total_duration:
-                video_clip = video_clip.loop(duration=total_duration)
-            else:
-                video_clip = video_clip.subclip(0, total_duration)
+    # 2. Captured Snapshot Layer
+    if captured_img_path and os.path.exists(captured_img_path):
+        print(f"[ENGINE] Compositing webpage snapshot: {captured_img_path}")
+        web_clip = ImageClip(captured_img_path).set_duration(total_duration)
+        web_clip = web_clip.resize(width=CANVAS_WIDTH)
+        clips_to_composite.append(web_clip)
+    else:
+        print("[ENGINE WARNING] Snapshot file missing. Skipping background capture layer.")
 
-            video_clip = video_clip.resize(height=CANVAS_HEIGHT)
-            if video_clip.w < CANVAS_WIDTH:
-                video_clip = video_clip.resize(width=CANVAS_WIDTH)
-            
-            video_clip = video_clip.crop(
-                x_center=video_clip.w / 2,
-                y_center=video_clip.h / 2,
-                width=CANVAS_WIDTH,
-                height=CANVAS_HEIGHT
-            )
-            clips_to_composite.append(video_clip)
-            print("[ENGINE] Screen recording layer merged into video.")
-        except Exception as e:
-            print(f"[ERROR] Failed to composite screen recording: {e}")
-
-    # 4. Text Overlay Layer
+    # 3. Text Overlay Layer
     if overlay_text:
-        try:
-            txt_clip = TextClip(
-                overlay_text,
-                fontsize=48,
-                color='white',
-                font='DejaVu-Sans-Bold',
-                method='caption',
-                size=(CANVAS_WIDTH - 120, None)
-            ).set_duration(total_duration).set_position(('center', 'center'))
-            
-            clips_to_composite.append(txt_clip)
-        except Exception as e:
-            print(f"[WARNING] Text rendering failed: {e}")
+        txt_img = create_text_image(overlay_text, CANVAS_WIDTH, CANVAS_HEIGHT)
+        txt_clip = ImageClip(txt_img).set_duration(total_duration)
+        clips_to_composite.append(txt_clip)
 
-    # 5. Composite Output
-    print("[ENGINE] Exporting final video...")
+    # 4. Export Video
+    print("[ENGINE] Writing video stream...")
     final_video = CompositeVideoClip(clips_to_composite, size=(CANVAS_WIDTH, CANVAS_HEIGHT))
-    if audio_clip:
-        final_video = final_video.set_audio(audio_clip)
+
+    if audio_path and os.path.exists(audio_path):
+        try:
+            audio_clip = AudioFileClip(audio_path)
+            final_video = final_video.set_audio(audio_clip)
+        except Exception as e:
+            print(f"[WARNING] Audio attaching failed: {e}")
 
     final_video.write_videofile(
         output_path,
@@ -146,25 +132,21 @@ def generate_reel(
         preset="ultrafast",
         threads=4
     )
-
     final_video.close()
-    if audio_clip:
-        audio_clip.close()
-    print("[ENGINE] Video export successful!")
+    print("[ENGINE] Complete!")
 
 if __name__ == "__main__":
     target_url = os.getenv("TOOL_URL", "https://aicarousels.com")
-    rec_path = "recording.webm"
+    snapshot_file = "site_snapshot.png"
     
-    # Run Playwright scraper to capture website video before rendering
-    captured_video = asyncio.run(record_website_video(target_url, rec_path, duration=10))
-
+    snapshot = asyncio.run(capture_website_screenshot(target_url, snapshot_file))
+    
+    txt_content = os.getenv("OVERLAY_TEXT", f"Try {target_url.replace('https://', '')}")
     aud_path = os.getenv("AUDIO_PATH", "assets/voiceover.mp3")
-    txt_content = os.getenv("OVERLAY_TEXT", f"Check out {target_url}")
     out_path = os.getenv("OUTPUT_PATH", "final_reel.mp4")
 
     generate_reel(
-        bg_video_path=captured_video if captured_video else None,
+        captured_img_path=snapshot,
         audio_path=aud_path if os.path.exists(aud_path) else None,
         overlay_text=txt_content,
         output_path=out_path
