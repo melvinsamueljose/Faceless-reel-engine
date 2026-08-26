@@ -5,7 +5,7 @@ import re
 import math
 import asyncio
 import requests
-from camoufox.async_api import AsyncCamoufox
+from playwright.async_api import async_playwright
 
 def clean_token(token_str):
     token = re.sub(r'[\[\]\'"\s]', '', str(token_str))
@@ -116,19 +116,24 @@ async def human_scroll(page, scroll_amount, steps=25):
         await asyncio.sleep(0.02)
 
 async def capture_screen(target_url, output_path="raw_desktop.webm"):
-    print(f"[RECORDER] Launching Camoufox anti-detect recorder for {target_url}...")
+    print(f"[RECORDER] Launching anti-detect Playwright Firefox for {target_url}...")
     
-    async with AsyncCamoufox(
-        headless=True,
-        geoip=True,
-        screen={"width": 1920, "height": 1080}
-    ) as browser:
+    async with async_playwright() as p:
+        browser = await p.firefox.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
             record_video_dir="temp_raw",
             record_video_size={"width": 1920, "height": 1080}
         )
         page = await context.new_page()
+        
+        # Override webdriver flag
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
         try:
             await page.goto(target_url, wait_until="networkidle", timeout=60000)
             await asyncio.sleep(3)
@@ -165,6 +170,7 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
             print(f"[CAPTURE WARNING] {e}")
         finally:
             await context.close()
+            await browser.close()
 
     raw_dir = "temp_raw"
     videos = [os.path.join(raw_dir, f) for f in os.listdir(raw_dir) if f.endswith(".webm")]
