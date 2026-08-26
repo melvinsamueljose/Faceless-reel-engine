@@ -28,8 +28,8 @@ def get_ai_script(target_url):
     if not api_key:
         print("[AI SCRIPT] No OPENROUTER_API_KEY found, using standard fallback.")
         return {
-            "hook": custom_hook if custom_hook else "INSANE AI TOOL FOR CREATORS!",
-            "voiceover": custom_voiceover if custom_voiceover else f"Check out {domain}. It automates your workflow in seconds."
+            "hook": custom_hook if custom_hook else "STOP MAKING CAROUSELS MANUALLY!",
+            "voiceover": custom_voiceover if custom_voiceover else f"If you are building digital content, {domain} automates your workflow instantly."
         }
 
     prompt = (
@@ -116,11 +116,9 @@ async def human_scroll(page, scroll_amount, steps=30):
         await asyncio.sleep(0.02)
 
 async def capture_screen(target_url, output_path="raw_desktop.webm"):
-    click_selector = os.getenv("CLICK_SELECTOR", "a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started')").strip()
-    scroll_depth = float(os.getenv("SCROLL_DEPTH", "300"))
-    post_click_wait = float(os.getenv("POST_CLICK_WAIT", "6.0"))
+    post_click_wait = float(os.getenv("POST_CLICK_WAIT", "14.0"))
 
-    print(f"[RECORDER] Launching controlled screen recorder for {target_url}...")
+    print(f"[RECORDER] Launching full workflow recorder for {target_url}...")
     
     async with async_playwright() as p:
         browser = await p.firefox.launch(
@@ -141,45 +139,65 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
             await asyncio.sleep(2.5)
             await inject_visual_cursor(page)
             
-            # Start off-center
-            curr_x, curr_y = 250, 200
+            curr_x, curr_y = 300, 200
             await page.mouse.move(curr_x, curr_y)
             await asyncio.sleep(1.0)
 
-            # Step 1: Controlled smooth scroll
-            if scroll_depth > 0:
-                print(f"[ACTION] Smooth scrolling down by {scroll_depth}px...")
-                await human_scroll(page, scroll_depth, steps=30)
-                await asyncio.sleep(1.0)
-
-            # Step 2: Target interaction
-            btn = page.locator(click_selector).first
-            if await btn.is_visible():
-                box = await btn.bounding_box()
+            # Step 1: Click Main CTA / Enter App
+            print("[WORKFLOW 1/4] Navigating main CTA...")
+            main_cta = page.locator("a:has-text('Try'), button:has-text('Create'), a[href*='app']").first
+            if await main_cta.is_visible():
+                box = await main_cta.bounding_box()
                 if box:
                     target_x = box["x"] + box["width"] / 2
                     target_y = box["y"] + box["height"] / 2
-                    
-                    print(f"[ACTION] Keyframing mouse movement to selector: {click_selector}")
-                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=45)
-                    await asyncio.sleep(0.6) # Hover pause for human feel
-                    
-                    print("[ACTION] Clicking target...")
+                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=35)
+                    await asyncio.sleep(0.4)
                     await page.mouse.down()
-                    await asyncio.sleep(0.15)
+                    await asyncio.sleep(0.12)
+                    await page.mouse.up()
+                    curr_x, curr_y = target_x, target_y
+                    await asyncio.sleep(3.0)
+
+            # Step 2: Locate Topic Input Box & Type Prompt
+            print("[WORKFLOW 2/4] Typing topic into AI generator...")
+            prompt_input = page.locator("textarea, input[placeholder*='topic'], input[placeholder*='prompt'], input[type='text']").first
+            if await prompt_input.is_visible():
+                box = await prompt_input.bounding_box()
+                if box:
+                    target_x = box["x"] + box["width"] / 2
+                    target_y = box["y"] + box["height"] / 2
+                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=35)
+                    await asyncio.sleep(0.4)
+                    await page.mouse.down()
+                    await asyncio.sleep(0.1)
                     await page.mouse.up()
                     
                     curr_x, curr_y = target_x, target_y
-            else:
-                print(f"[ACTION] Selector '{click_selector}' not visible, executing secondary scroll.")
-                await human_scroll(page, 400, steps=25)
+                    await prompt_input.type("10 AI Productivity Hacks for Creators", delay=80)
+                    await asyncio.sleep(1.0)
 
-            # Step 3: Post-click recording wait time
-            print(f"[ACTION] Holding record state for {post_click_wait}s to capture loaded UI...")
+            # Step 3: Click Generate Button
+            print("[WORKFLOW 3/4] Clicking generate button...")
+            gen_btn = page.locator("button:has-text('Generate'), button[type='submit'], button:has-text('Create Carousel')").first
+            if await gen_btn.is_visible():
+                box = await gen_btn.bounding_box()
+                if box:
+                    target_x = box["x"] + box["width"] / 2
+                    target_y = box["y"] + box["height"] / 2
+                    await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=30)
+                    await asyncio.sleep(0.3)
+                    await page.mouse.down()
+                    await asyncio.sleep(0.12)
+                    await page.mouse.up()
+                    curr_x, curr_y = target_x, target_y
+
+            # Step 4: Record AI Generation and Slide Rendering
+            print(f"[WORKFLOW 4/4] Recording complete carousel output for {post_click_wait} seconds...")
             await asyncio.sleep(post_click_wait)
 
-            # Step 4: Final subtle scroll showcase
-            await human_scroll(page, 250, steps=20)
+            # Showcase smooth scroll over output
+            await human_scroll(page, 200, steps=20)
             await asyncio.sleep(2.0)
 
         except Exception as e:
@@ -192,7 +210,7 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
     videos = [os.path.join(raw_dir, f) for f in os.listdir(raw_dir) if f.endswith(".webm")]
     if videos:
         os.rename(max(videos, key=os.path.getctime), output_path)
-        print(f"[RECORDER] High-precision desktop footage saved: {output_path}")
+        print(f"[RECORDER] Full generation recording completed: {output_path}")
 
 def notify_telegram(video_path, script_data):
     raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -200,7 +218,7 @@ def notify_telegram(video_path, script_data):
     chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
 
     caption = (
-        "📹 *Controlled Precision Screen Recording Complete*\n\n"
+        "📹 *Full AI Carousel Generation Captured*\n\n"
         f"📌 *Hook:* {script_data['hook']}\n"
         f"🎙️ *Voiceover:* {script_data['voiceover']}\n\n"
         "Ready for Stage 2 render!"
