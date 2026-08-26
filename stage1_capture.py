@@ -5,10 +5,10 @@ import re
 import math
 import asyncio
 import requests
-from playwright.async_api import async_playwright
+from camoufox.async_api import AsyncCamoufox
 
 def clean_token(token_str):
-    token = re.sub(r'[\[\]\'"\s]', '', token_str)
+    token = re.sub(r'[\[\]\'"\s]', '', str(token_str))
     if "bot" in token:
         token = token.split("bot")[-1]
     return token
@@ -18,16 +18,18 @@ def get_ai_script(target_url):
     custom_voiceover = os.getenv("CUSTOM_VOICEOVER", "").strip()
 
     if custom_hook and custom_voiceover:
+        print("[SCRIPT ENGINE] Using manually provided custom Hook and Voiceover.")
         return {"hook": custom_hook, "voiceover": custom_voiceover}
 
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    ai_instructions = os.getenv("AI_PROMPT_INSTRUCTIONS", "Create a high-converting 10-second Reel script.").strip()
+    ai_instructions = os.getenv("AI_PROMPT_INSTRUCTIONS", "Create an engaging 10-second Reel script.").strip()
     domain = target_url.replace("https://", "").replace("http://", "").split("/")[0]
 
     if not api_key:
+        print("[AI SCRIPT] No OPENROUTER_API_KEY found, using standard fallback.")
         return {
-            "hook": custom_hook if custom_hook else "STOP CREATING CAROUSELS MANUALLY!",
-            "voiceover": custom_voiceover if custom_voiceover else f"Check out {domain}. Generate viral social media carousels in seconds using AI."
+            "hook": custom_hook if custom_hook else "INSANE AI TOOL FOR CREATORS!",
+            "voiceover": custom_voiceover if custom_voiceover else f"Check out {domain}. It automates your workflow in seconds."
         }
 
     prompt = (
@@ -56,10 +58,11 @@ def get_ai_script(target_url):
             return res_json
         else:
             raise KeyError(f"OpenRouter missing choices: {data}")
-    except Exception:
+    except Exception as e:
+        print(f"[AI SCRIPT ERROR] {e}. Using fallback values.")
         return {
-            "hook": custom_hook if custom_hook else "CREATE CAROUSELS 10X FASTER!",
-            "voiceover": custom_voiceover if custom_voiceover else f"If you build content, {domain} automates your design workflow instantly."
+            "hook": custom_hook if custom_hook else "STOP MAKING CAROUSELS MANUALLY!",
+            "voiceover": custom_voiceover if custom_voiceover else f"If you are building digital content, {domain} automates your workflow instantly."
         }
 
 async def inject_visual_cursor(page):
@@ -98,30 +101,28 @@ async def inject_visual_cursor(page):
     await page.evaluate(cursor_script)
 
 async def human_move_mouse(page, start_x, start_y, end_x, end_y, steps=35):
-    """Generates keyframed smooth mouse movement using cubic bezier easing."""
     for i in range(1, steps + 1):
         t = i / steps
-        # Ease-in-out quadratic curve math
         ease_t = 2 * t * t if t < 0.5 else 1 - math.pow(-2 * t + 2, 2) / 2
-        
         curr_x = start_x + (end_x - start_x) * ease_t
         curr_y = start_y + (end_y - start_y) * ease_t
-        
         await page.mouse.move(curr_x, curr_y)
-        await asyncio.sleep(0.012)  # ~60fps smooth interpolation
+        await asyncio.sleep(0.012)
 
 async def human_scroll(page, scroll_amount, steps=25):
-    """Keyframed scroll prevent sharp jumps."""
     per_step = scroll_amount / steps
     for _ in range(steps):
         await page.mouse.wheel(0, per_step)
         await asyncio.sleep(0.02)
 
 async def capture_screen(target_url, output_path="raw_desktop.webm"):
-    print(f"[RECORDER] Launching precision recorder for {target_url}...")
+    print(f"[RECORDER] Launching Camoufox anti-detect recorder for {target_url}...")
     
-    async with async_playwright() as p:
-        browser = await p.firefox.launch(headless=True)
+    async with AsyncCamoufox(
+        headless=True,
+        geoip=True,
+        screen={"width": 1920, "height": 1080}
+    ) as browser:
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             record_video_dir="temp_raw",
@@ -130,18 +131,16 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
         page = await context.new_page()
         try:
             await page.goto(target_url, wait_until="networkidle", timeout=60000)
+            await asyncio.sleep(3)
             await inject_visual_cursor(page)
             
-            # Start initial mouse position at top-left off-center
             curr_x, curr_y = 200, 200
             await page.mouse.move(curr_x, curr_y)
             await asyncio.sleep(1.0)
 
-            # Smoothly scroll header section
             await human_scroll(page, 300, steps=20)
             await asyncio.sleep(0.8)
 
-            # Locate primary call-to-action button dynamically
             btn = page.locator("a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started'), a.btn").first
             
             if await btn.is_visible():
@@ -150,26 +149,22 @@ async def capture_screen(target_url, output_path="raw_desktop.webm"):
                     target_x = box["x"] + box["width"] / 2
                     target_y = box["y"] + box["height"] / 2
                     
-                    # Keyframe smooth move to button
                     await human_move_mouse(page, curr_x, curr_y, target_x, target_y, steps=40)
-                    await asyncio.sleep(0.4) # Hover pause
+                    await asyncio.sleep(0.4)
                     
-                    # Click with natural hold delay
                     await page.mouse.down()
                     await asyncio.sleep(0.12)
                     await page.mouse.up()
                     
-                    await asyncio.sleep(3.0)
+                    await asyncio.sleep(4.0)
             else:
-                # Fallback multi-stage scroll if no primary button found
                 await human_scroll(page, 500, steps=30)
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2.0)
 
         except Exception as e:
             print(f"[CAPTURE WARNING] {e}")
         finally:
             await context.close()
-            await browser.close()
 
     raw_dir = "temp_raw"
     videos = [os.path.join(raw_dir, f) for f in os.listdir(raw_dir) if f.endswith(".webm")]
@@ -183,22 +178,19 @@ def notify_telegram(video_path, script_data):
     chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
 
     caption = (
-        f"📹 *Precision Smooth Desktop Capture Complete*\n\n"
+        f"📹 *Precision Anti-Detect Desktop Capture Complete*\n\n"
         f"📌 *Hook:* {script_data['hook']}\n"
         f"🎙️ *Voiceover:* {script_data['voiceover']}\n\n"
-        f"Ready for Stage 2 render!"
+        f"Ready for Stage 2 HyperFrames render!"
     )
 
-    # Clean string construction without f-string URL interpolation
-    base_url = "https://api.telegram.org/bot" + str(bot_token) + "/sendVideo"
-    
+    base_url = "[https://api.telegram.org/bot](https://api.telegram.org/bot)" + str(bot_token) + "/sendVideo"
     with open(video_path, "rb") as vf:
         requests.post(
             base_url,
             data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"},
             files={"video": vf}
         )
-
 
 async def main():
     url = os.getenv("TARGET_URL", "[https://aicarousels.com](https://aicarousels.com)")
