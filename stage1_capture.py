@@ -189,9 +189,16 @@ def notify_telegram(video_path, script_data):
         f"Ready for Stage 2 render!"
     )
 
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){bot_token}/sendVideo"
+    # Clean string construction without f-string URL interpolation
+    base_url = "https://api.telegram.org/bot" + str(bot_token) + "/sendVideo"
+    
     with open(video_path, "rb") as vf:
-        requests.post(url, data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}, files={"video": vf})
+        requests.post(
+            base_url,
+            data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"},
+            files={"video": vf}
+        )
+
 
 async def main():
     url = os.getenv("TARGET_URL", "[https://aicarousels.com](https://aicarousels.com)")
