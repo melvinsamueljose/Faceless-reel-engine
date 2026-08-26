@@ -11,6 +11,22 @@ on:
         description: 'Execution Stage (capture or render)'
         required: true
         default: 'capture'
+      custom_hook:
+        description: 'Custom Hook Text (Optional: overrides AI)'
+        required: false
+        default: ''
+      custom_voiceover:
+        description: 'Custom Voiceover Script (Optional: overrides AI)'
+        required: false
+        default: ''
+      ai_prompt_instructions:
+        description: 'Custom AI Generation Prompt / Style'
+        required: false
+        default: 'Create an engaging 10-second Reel script.'
+      capture_action:
+        description: 'Capture Action (scroll, click_try, or full_page)'
+        required: true
+        default: 'click_try'
 
 jobs:
   run-pipeline:
@@ -43,6 +59,10 @@ jobs:
         if: ${{ github.event.inputs.stage == 'capture' }}
         env:
           TARGET_URL: ${{ github.event.inputs.target_url }}
+          CUSTOM_HOOK: ${{ github.event.inputs.custom_hook }}
+          CUSTOM_VOICEOVER: ${{ github.event.inputs.custom_voiceover }}
+          AI_PROMPT_INSTRUCTIONS: ${{ github.event.inputs.ai_prompt_instructions }}
+          CAPTURE_ACTION: ${{ github.event.inputs.capture_action }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
