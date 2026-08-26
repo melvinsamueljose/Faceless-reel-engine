@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       tool_url:
-        description: 'URL of the target site/SaaS to record'
+        description: 'Target Website/SaaS URL'
         required: true
         default: 'https://aicarousels.com'
+      caption_text:
+        description: 'Overlay Caption Text'
+        required: false
+        default: 'Check out this insane AI tool!'
 
 jobs:
   generate-and-render:
@@ -24,18 +28,19 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
+          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu
 
-      - name: Install Python Dependencies & Playwright Browsers
+      - name: Install Python Packages & Browsers
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Execute Reel Generation Engine
+      - name: Execute Reel Engine
         env:
           TOOL_URL: ${{ github.event.inputs.tool_url }}
+          OVERLAY_TEXT: ${{ github.event.inputs.caption_text }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
