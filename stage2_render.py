@@ -34,7 +34,7 @@ def deliver_to_telegram(video_path):
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip(" '\"[]")
     chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip(" '\"[]")
 
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){bot_token}/sendVideo"
+    url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
     caption = "🔥 *Reel Rendered via OpenCode & HyperFrames!*"
     
     with open(video_path, "rb") as vf:
