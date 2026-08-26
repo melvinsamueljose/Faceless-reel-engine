@@ -5,10 +5,6 @@ import re
 import requests
 
 def clean_token(token_str):
-    """
-    Sanitizes environment tokens to prevent double 'bot' prefixing 
-    and HTTP schema errors.
-    """
     if not token_str:
         return ""
     token = re.sub(r'[\[\]\'"\s]', '', str(token_str))
@@ -41,7 +37,7 @@ def parse_telegram_method_one():
     user_prompt_text = ""
     photo_file_ids = []
 
-    # 1. Scan updates backwards to find the latest standalone prompt message
+    # 1. Grab prompt text from latest Telegram message
     for result in reversed(updates):
         msg = result.get("message", {})
         text = msg.get("text", "") or msg.get("caption", "")
@@ -49,25 +45,20 @@ def parse_telegram_method_one():
             user_prompt_text = text
             break
 
-    # 2. Scan updates backwards to extract photo assets (supports batch albums)
+    # 2. Extract image attachments
     for result in reversed(updates):
         msg = result.get("message", {})
         if "photo" in msg:
-            # Telegram stores multiple sizes per photo; index [-1] is highest resolution
             photo_file_ids.append(msg["photo"][-1]["file_id"])
-            # Collect up to 5 photos for the multi-frame setup
             if len(photo_file_ids) >= 5:
                 break
 
-    # Reverse back to maintain correct chronological order (Image 1 to 5)
     photo_file_ids.reverse()
 
-    # Default fallbacks
     hook = "STOP MAKING CAROUSELS MANUALLY!"
     caption_style = "energetic_yellow_highlight"
     vo_timeline = []
 
-    # Parse structured prompt parameters
     if user_prompt_text:
         print("[STAGE 1] Parsing standalone Telegram prompt message...")
         lines = user_prompt_text.split("\n")
@@ -110,7 +101,6 @@ def parse_telegram_method_one():
     with open("script.json", "w") as f:
         json.dump(payload, f, indent=2)
 
-    # 3. Download image assets sequentially
     if photo_file_ids:
         print(f"[STAGE 1] Found {len(photo_file_ids)} attached images. Downloading assets...")
         for idx, file_id in enumerate(photo_file_ids, start=1):
@@ -126,8 +116,6 @@ def parse_telegram_method_one():
                 with open(out_name, "wb") as f:
                     f.write(res.content)
                 print(f"[STAGE 1] Saved {out_name}")
-    else:
-        print("[STAGE 1 WARNING] No new images found in Telegram chat. Using existing local assets.")
 
 def send_ack():
     raw_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
