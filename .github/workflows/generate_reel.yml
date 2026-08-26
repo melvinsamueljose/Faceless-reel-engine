@@ -3,11 +3,12 @@ name: Generate Faceless Reel
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 9 * * *'  # Runs daily at 9:00 AM UTC
+    - cron: '0 9 * * *'
 
 jobs:
   build-and-render:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout Code
@@ -32,7 +33,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
 
-      - name: Execute Autonomous Pipeline
+      - name: Execute Autonomous Pipeline with Telegram Authorization
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
