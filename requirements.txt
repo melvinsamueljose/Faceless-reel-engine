@@ -1,3 +1,5 @@
 playwright
 requests
 edge-tts
+gTTS
+openai-whisper
