@@ -1,54 +1,56 @@
-name: Generate and Render Faceless Reel
+name: OpenCode HyperFrames Pipeline
 
 on:
   workflow_dispatch:
     inputs:
-      tool_url:
-        description: 'Target Website/SaaS URL'
+      target_url:
+        description: 'SaaS / Website Target URL'
         required: true
         default: 'https://aicarousels.com'
-      caption_text:
-        description: 'Overlay Caption Text'
-        required: false
-        default: 'Check out this insane AI tool!'
+      stage:
+        description: 'Execution Stage (capture or render)'
+        required: true
+        default: 'capture'
 
 jobs:
-  generate-and-render:
+  run-pipeline:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install System Dependencies
+      - name: Setup Node.js & FFmpeg
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install System Packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
 
-      - name: Install Python Packages & Browsers
+      - name: Install Python & Node Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          playwright install chromium
-          playwright install-deps chromium
+          pip install playwright camoufox edge-tts requests Pillow
+          playwright install firefox
+          npm install -g hyperframes
 
-      - name: Execute Reel Engine
+      - name: Execute Stage 1 (Capture Raw Footage)
+        if: ${{ github.event.inputs.stage == 'capture' }}
         env:
-          TOOL_URL: ${{ github.event.inputs.tool_url }}
-          OVERLAY_TEXT: ${{ github.event.inputs.caption_text }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TARGET_URL: ${{ github.event.inputs.target_url }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python engine.py
+        run: python stage1_capture.py
 
-      - name: Send Video to Telegram
-        if: success()
+      - name: Execute Stage 2 (HyperFrames HTML-to-Video Render)
+        if: ${{ github.event.inputs.stage == 'render' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python send_telegram.py
+        run: python stage2_render.py
