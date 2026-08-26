@@ -1,55 +1,48 @@
 import os
-import sys
 import json
-import asyncio
+import re
 import subprocess
 import requests
-import edge_tts
 
-async def generate_voiceover(text, output_file="voiceover.mp3"):
-    communicate = edge_tts.Communicate(text, voice="en-US-ChristopherNeural", rate="+15%")
-    await communicate.save(output_file)
-    print(f"[AUDIO] Generated voiceover: {output_file}")
+def clean_token(token_str):
+    token = re.sub(r'[\[\]\'"\s]', '', str(token_str))
+    if "bot" in token:
+        token = token.split("bot")[-1]
+    return token
 
-def get_audio_duration(file_path):
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    return float(res.stdout.strip())
+def generate_tts_audio(voiceover_text, output_audio="voiceover.mp3"):
+    print("[STAGE 2] Generating Edge-TTS Voiceover Audio...")
+    cmd = f'edge-tts --text "{voiceover_text}" --write-media {output_audio} --voice en-US-ChristopherNeural'
+    subprocess.run(cmd, shell=True, check=True)
 
-def compile_hyperframe_composition(hook_text, duration):
-    with open("template.html", "r") as f:
-        html = f.read()
+def render_hyperframes_reel():
+    print("[STAGE 2] Rendering vertical Reel layout & animated captions...")
+    # Executes HyperFrames HTML-to-Video Engine
+    cmd = "hyperframes render template.html -o final_reel.mp4"
+    subprocess.run(cmd, shell=True, check=True)
 
-    html = html.replace("{{HOOK_TEXT}}", hook_text)
-    html = html.replace("{{DURATION}}", str(duration))
+def send_final_reel():
+    bot_token = clean_token(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+    chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
 
-    with open("composition.html", "w") as f:
-        f.write(html)
-
-    print("[HYPERFRAMES] Rendering composition.html via headless Chrome engine...")
-    render_cmd = ["npx", "hyperframes", "render", "composition.html", "--output", "final_reel.mp4"]
-    subprocess.run(render_cmd, check=True)
-
-def deliver_to_telegram(video_path):
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip(" '\"[]")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip(" '\"[]")
-
-    url = api_endpoint = "https://api.telegram.org/bot" + bot_token + "/sendVideo"
-    caption = "🔥 *Reel Rendered via OpenCode & HyperFrames!*"
+    caption = "🚀 *Your Stitched Final Reel is Ready!*"
+    api_endpoint = "https://api.telegram.org/bot" + bot_token + "/sendVideo"
     
-    with open(video_path, "rb") as vf:
-        requests.post(url, data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}, files={"video": vf})
-    print("[TELEGRAM] Final Reel sent to your chat.")
+    video_file = "final_reel.mp4" if os.path.exists("final_reel.mp4") else "raw_desktop.webm"
 
-async def main():
-    with open("script.json") as f:
-        script_data = json.load(f)
-
-    await generate_voiceover(script_data["voiceover"])
-    duration = get_audio_duration("voiceover.mp3") + 0.5
-    
-    compile_hyperframe_composition(script_data["hook"], duration)
-    deliver_to_telegram("final_reel.mp4")
+    print(f"[STAGE 2] Uploading final Reel ({video_file}) to Telegram...")
+    with open(video_file, "rb") as vf:
+        requests.post(
+            api_endpoint,
+            data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"},
+            files={"video": vf}
+        )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if os.path.exists("script.json"):
+        with open("script.json", "r") as f:
+            script = json.load(f)
+        
+        generate_tts_audio(script.get("voiceover", ""))
+        render_hyperframes_reel()
+        send_final_reel()
