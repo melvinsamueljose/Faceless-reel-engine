@@ -12,7 +12,7 @@ def clean_token(token_str):
         token = token[3:]
     return token
 
-def parse_telegram_method_one():
+def parse_telegram_payload():
     raw_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     bot_token = clean_token(raw_bot_token)
     chat_id = clean_token(os.getenv("TELEGRAM_CHAT_ID", ""))
@@ -37,7 +37,7 @@ def parse_telegram_method_one():
     user_prompt_text = ""
     photo_file_ids = []
 
-    # 1. Grab prompt text from latest Telegram message
+    # Parse text prompt from Telegram
     for result in reversed(updates):
         msg = result.get("message", {})
         text = msg.get("text", "") or msg.get("caption", "")
@@ -45,7 +45,7 @@ def parse_telegram_method_one():
             user_prompt_text = text
             break
 
-    # 2. Extract image attachments
+    # Extract up to 5 highest-resolution images from recent photos
     for result in reversed(updates):
         msg = result.get("message", {})
         if "photo" in msg:
@@ -60,7 +60,7 @@ def parse_telegram_method_one():
     vo_timeline = []
 
     if user_prompt_text:
-        print("[STAGE 1] Parsing standalone Telegram prompt message...")
+        print("[STAGE 1] Parsing Telegram text prompt...")
         lines = user_prompt_text.split("\n")
         
         simple_vo = ""
@@ -101,8 +101,9 @@ def parse_telegram_method_one():
     with open("script.json", "w") as f:
         json.dump(payload, f, indent=2)
 
+    # Download attached photos
     if photo_file_ids:
-        print(f"[STAGE 1] Found {len(photo_file_ids)} attached images. Downloading assets...")
+        print(f"[STAGE 1] Downloading {len(photo_file_ids)} attached screenshots...")
         for idx, file_id in enumerate(photo_file_ids, start=1):
             file_info_url = f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}"
             file_info = requests.get(file_info_url).json()
@@ -129,7 +130,7 @@ def send_ack():
         data = json.load(f)
 
     msg = (
-        "⚙️ *Method 1 Payload Ingestion Complete*\n\n"
+        "⚙️ *Payload Ingestion Complete*\n\n"
         f"🖼️ *Downloaded Media:* {data['media_count']} screenshots\n"
         f"📌 *Hook:* {data['hook']}\n"
         f"🎨 *Style:* {data['caption_style']}\n"
@@ -144,5 +145,5 @@ def send_ack():
         print(f"[STAGE 1 WARNING] Failed to send Telegram ACK: {e}")
 
 if __name__ == "__main__":
-    parse_telegram_method_one()
+    parse_telegram_payload()
     send_ack()
