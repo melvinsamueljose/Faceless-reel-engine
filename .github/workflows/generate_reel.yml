@@ -2,45 +2,14 @@ name: OpenCode HyperFrames Pipeline
 
 on:
   workflow_dispatch:
-    inputs:
-      target_url:
-        description: 'SaaS / Website Target URL'
-        required: true
-        default: 'https://aicarousels.com'
-      stage:
-        description: 'Execution Stage (capture or render)'
-        required: true
-        default: 'capture'
-      custom_hook:
-        description: 'Custom Hook Text (Optional: overrides AI)'
-        required: false
-        default: ''
-      custom_voiceover:
-        description: 'Custom Voiceover Script (Optional: overrides AI)'
-        required: false
-        default: ''
-      ai_prompt_instructions:
-        description: 'Custom AI Generation Prompt / Style'
-        required: false
-        default: 'Create an engaging 10-second Reel script.'
-      click_selector:
-        description: 'CSS Selector / Text to click (e.g., text=Try for free, .btn-primary)'
-        required: false
-        default: "a:has-text('Try'), button:has-text('Create'), a:has-text('Get Started'), a.btn"
-      scroll_depth:
-        description: 'Pixels to scroll before clicking'
-        required: false
-        default: '300'
-      post_click_wait:
-        description: 'Seconds to record after click action'
-        required: false
-        default: '6.0'
 
 jobs:
-  run-pipeline:
+  pipeline:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -50,37 +19,29 @@ jobs:
       - name: Setup Node.js & FFmpeg
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '18'
 
       - name: Install System Packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get install -y ffmpeg
 
       - name: Install Python & Node Dependencies
         run: |
-          pip install playwright requests Pillow
-          playwright install firefox
-          npm install -g hyperframes
+          python -m pip install --upgrade pip
+          pip install requests edge-tts
+          npm install -g hyperframes || true
 
-      - name: Execute Stage 1 (Capture Raw Footage)
-        if: ${{ github.event.inputs.stage == 'capture' }}
-        env:
-          TARGET_URL: ${{ github.event.inputs.target_url }}
-          CUSTOM_HOOK: ${{ github.event.inputs.custom_hook }}
-          CUSTOM_VOICEOVER: ${{ github.event.inputs.custom_voiceover }}
-          AI_PROMPT_INSTRUCTIONS: ${{ github.event.inputs.ai_prompt_instructions }}
-          CLICK_SELECTOR: ${{ github.event.inputs.click_selector }}
-          SCROLL_DEPTH: ${{ github.event.inputs.scroll_depth }}
-          POST_CLICK_WAIT: ${{ github.event.inputs.post_click_wait }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python stage1_capture.py
-
-      - name: Execute Stage 2 (HyperFrames HTML-to-Video Render)
-        if: ${{ github.event.inputs.stage == 'render' }}
+      - name: Stage 1 - Capture Telegram Media & Parse Script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python stage2_render.py
+        run: |
+          python stage1_capture.py
+
+      - name: Stage 2 - Render HyperFrames & Dispatch Video
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python stage2_render.py
